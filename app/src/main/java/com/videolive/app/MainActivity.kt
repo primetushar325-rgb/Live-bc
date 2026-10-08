@@ -36,12 +36,14 @@ import com.videolive.app.data.VideoRepository
 import com.videolive.app.ffmpeg.FFmpegCommandBuilder
 import com.videolive.app.ffmpeg.FFmpegManager
 import com.videolive.app.media.LoadedVideo
+import com.videolive.app.media.VideoInputException
 import com.videolive.app.media.VideoLoader
 import com.videolive.app.model.BitrateMode
 import com.videolive.app.model.LoopMode
 import com.videolive.app.model.Orientation
 import com.videolive.app.model.Quality
 import com.videolive.app.model.StreamConfig
+import com.videolive.app.model.VideoInfo
 import com.videolive.app.stream.StreamService
 import com.videolive.app.util.DeviceCaps
 import com.videolive.app.util.Net
@@ -342,15 +344,34 @@ class MainActivity : AppCompatActivity() {
         emptyPreview.visibility = View.VISIBLE
         previewThumb.visibility = View.GONE
         videoInfoBlock.visibility = View.GONE
+        VideoRepository.current = null
 
         lifecycleScope.launch {
-            val loaded = withContext(Dispatchers.IO) {
-                VideoLoader.load(this@MainActivity, uri)
+            // Phase 1 — validate the content:// Uri and read platform metadata.
+            // Fast, and it makes the card appear immediately.
+            val inspection = try {
+                withContext(Dispatchers.IO) { VideoLoader.inspect(this@MainActivity, uri) }
+            } catch (e: VideoInputException) {
+                showPickError(e.message ?: "Unable to read this video.")
+                return@launch
+            } catch (t: Throwable) {
+                showPickError("Unable to read this video.")
+                return@launch
             }
-            if (loaded == null) {
-                settingsRepo.videoUri = null
-                previewStatus.text = getString(R.string.no_video_selected)
-                toast("Unable to read this video.")
+            renderQuickCard(inspection)
+
+            // Phase 2 — build the FFmpeg input bridge (zero-copy SAF if it is
+            // verified readable, otherwise a buffered temporary cache copy).
+            previewStatus.text = "Preparing streaming input..."
+            val loaded = try {
+                withContext(Dispatchers.IO) {
+                    VideoLoader.prepareForFFmpeg(this@MainActivity, uri, inspection)
+                }
+            } catch (e: VideoInputException) {
+                showPickError(e.message ?: "Unable to read this video.")
+                return@launch
+            } catch (t: Throwable) {
+                showPickError("Unable to read this video.")
                 return@launch
             }
             VideoRepository.current = loaded
@@ -358,15 +379,50 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showPickError(message: String) {
+        settingsRepo.videoUri = null
+        VideoRepository.current = null
+        toast(message)
+        previewStatus.text = message
+        emptyPreview.visibility = View.VISIBLE
+        previewThumb.visibility = View.GONE
+        videoInfoBlock.visibility = View.GONE
+    }
+
+    private fun renderQuickCard(inspection: VideoLoader.Inspection) {
+        val info = inspection.platformInfo ?: return
+        txtFileName.text = inspection.displayName
+        txtMeta.text = buildMetaLine(info, inspection.sizeBytes)
+        txtAudioPresent.text = "Audio: checking…"
+        videoInfoBlock.visibility = View.VISIBLE
+        emptyPreview.visibility = View.GONE
+        previewThumb.visibility = View.GONE
+
+        val uriString = settingsRepo.videoUri ?: return
+        lifecycleScope.launch {
+            val bitmap = withContext(Dispatchers.IO) { loadThumbnail(Uri.parse(uriString)) }
+            if (bitmap != null && VideoRepository.current == null) {
+                previewThumb.setImageBitmap(bitmap)
+                previewThumb.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun buildMetaLine(info: VideoInfo, sizeBytes: Long): String {
+        val fpsPart = if (info.fps > 0) "${info.fps} fps" else "fps —"
+        val sizePart = Texts.formatSize(if (sizeBytes > 0) sizeBytes else info.sizeBytes)
+        return listOf(
+            Texts.formatDuration(info.durationMs),
+            "${info.width}x${info.height}",
+            fpsPart,
+            sizePart
+        ).joinToString("  •  ")
+    }
+
     private fun renderVideoCard(loaded: LoadedVideo) {
         val info = loaded.info
         txtFileName.text = loaded.source.displayName
-        txtMeta.text = listOf(
-            Texts.formatDuration(info.durationMs),
-            "${info.width}x${info.height}",
-            "${info.fps} fps",
-            Texts.formatSize(info.sizeBytes)
-        ).joinToString("  •  ")
+        txtMeta.text = buildMetaLine(info, loaded.source.sizeBytes)
         txtAudioPresent.text = if (info.hasAudio) {
             "Audio: available${if (info.audioCodec.isNotEmpty()) " (${info.audioCodec})" else ""}"
         } else {
@@ -430,9 +486,40 @@ class MainActivity : AppCompatActivity() {
     private fun validateAndStart() {
         val loaded = VideoRepository.current
         if (loaded == null) {
-            toast("Please select a video.")
+            // The temporary bridge copy may have been deleted after the last
+            // stream stopped — rebuild the FFmpeg input before starting.
+            val uriString = settingsRepo.videoUri
+            if (uriString == null) {
+                toast("Please select a video.")
+                return
+            }
+            toast("Preparing video for streaming...")
+            val startButton = findViewById<TextView>(R.id.btnStartLive)
+            startButton.isEnabled = false
+            lifecycleScope.launch {
+                val prepared = try {
+                    withContext(Dispatchers.IO) {
+                        VideoLoader.load(this@MainActivity, Uri.parse(uriString))
+                    }
+                } catch (e: VideoInputException) {
+                    toast(e.message ?: "Unable to read this video.")
+                    startButton.isEnabled = true
+                    return@launch
+                } catch (t: Throwable) {
+                    toast("Unable to read this video.")
+                    startButton.isEnabled = true
+                    return@launch
+                }
+                VideoRepository.current = prepared
+                startButton.isEnabled = true
+                startStreamWith(prepared)
+            }
             return
         }
+        startStreamWith(loaded)
+    }
+
+    private fun startStreamWith(loaded: LoadedVideo) {
         if (!switchFullUrl.isChecked) {
             val server = etServerUrl.text.toString().trim()
             val key = etStreamKey.text.toString().trim()

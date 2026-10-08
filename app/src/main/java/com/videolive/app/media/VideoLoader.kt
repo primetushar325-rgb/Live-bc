@@ -2,11 +2,20 @@ package com.videolive.app.media
 
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.videolive.app.ffmpeg.LogStore
 import com.videolive.app.model.VideoInfo
 import java.io.File
+
+/**
+ * Specific, user-facing failure reasons for the video input pipeline.
+ */
+class VideoInputException(
+    val kind: Kind,
+    message: String
+) : Exception(message) {
+    enum class Kind { PERMISSION, UNREADABLE, UNDECODABLE }
+}
 
 data class LoadedVideo(
     val source: InputSource,
@@ -14,73 +23,189 @@ data class LoadedVideo(
 )
 
 /**
- * Resolves a SAF Uri into something FFmpeg can read and probes it.
+ * Turns an Android content:// Uri (ACTION_OPEN_DOCUMENT) into a readable input
+ * for FFmpeg. The Uri is NEVER treated as a filesystem path.
  *
- * Primary path: FFmpegKit SAF protocol (zero-copy, the file is NOT duplicated).
- * Fallback: one-time copy into the app cache, only when the SAF descriptor
- * cannot be probed.
+ * Pipeline:
+ *  1. [inspect] — open the Uri via ContentResolver, read name/size/MIME, pull
+ *     platform metadata with MediaMetadataRetriever (works directly on the Uri).
+ *     This is fast and powers the immediate UI (thumbnail, name, duration, ...).
+ *  2. [prepareForFFmpeg] — build the FFmpeg input bridge:
+ *       a) Zero-copy: FFmpegKit SAF protocol, but only accepted after FFprobe
+ *          verified it can actually decode through it.
+ *       b) Reliable fallback: buffered streaming copy from
+ *          ContentResolver.openInputStream(uri) into cacheDir (large-file safe,
+ *          never loads the file into RAM). The copy is temporary and is deleted
+ *          after streaming stops or when a new video is chosen.
  */
 object VideoLoader {
 
-    fun load(context: Context, uri: Uri): LoadedVideo? {
-        val name = displayName(context, uri) ?: "video"
-        val size = statSize(context, uri)
+    data class Inspection(
+        val displayName: String,
+        val sizeBytes: Long,
+        val mimeType: String?,
+        val platformInfo: VideoInfo?
+    )
 
-        var source: InputSource? = try {
-            val safParam = FFmpegKitConfig.getSafParameterForRead(context, uri)
-            if (!safParam.isNullOrBlank()) {
-                InputSource.SafSource(safParam, name, size)
-            } else null
+    /**
+     * Fast validation + platform metadata. Throws [VideoInputException] with a
+     * precise message when the Uri cannot be used.
+     */
+    fun inspect(context: Context, uri: Uri): Inspection {
+        val check = UriValidator.check(context, uri)
+        LogStore.event("Selected URI: $uri")
+        LogStore.event("MIME type: ${check.mimeType ?: "(provider returned none)"}")
+        LogStore.event("Readable: ${check.openable}")
+
+        if (check.permissionDenied) {
+            throw VideoInputException(
+                VideoInputException.Kind.PERMISSION,
+                "Permission denied. Please select the video again."
+            )
+        }
+        if (!check.openable) {
+            throw VideoInputException(
+                VideoInputException.Kind.UNREADABLE,
+                "Unable to read this video."
+            )
+        }
+
+        val displayName = check.displayName
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null }
+            ?: "video"
+
+        val platformInfo = MediaProbe.probeWithMmr(context, uri)
+        if (platformInfo != null) {
+            LogStore.event(
+                "Metadata: ${platformInfo.width}x${platformInfo.height}, " +
+                    "${platformInfo.durationMs} ms, fps=${platformInfo.fps}"
+            )
+        }
+
+        val mimeType = check.mimeType
+        if (platformInfo == null && mimeType != null && !looksLikeVideoMime(mimeType)) {
+            throw VideoInputException(
+                VideoInputException.Kind.UNDECODABLE,
+                "This video cannot be read or decoded."
+            )
+        }
+        if (platformInfo == null) {
+            throw VideoInputException(
+                VideoInputException.Kind.UNDECODABLE,
+                "This video cannot be read or decoded."
+            )
+        }
+
+        return Inspection(displayName, check.sizeBytes, mimeType, platformInfo)
+    }
+
+    /**
+     * Builds and verifies the FFmpeg input for the Uri. Uses zero-copy SAF when
+     * it survives FFprobe verification; otherwise the temporary cache bridge.
+     */
+    fun prepareForFFmpeg(
+        context: Context,
+        uri: Uri,
+        inspection: Inspection
+    ): LoadedVideo {
+        // 1) Zero-copy attempt via FFmpegKit SAF protocol.
+        val safSource = try {
+            val param = FFmpegKitConfig.getSafParameterForRead(context, uri)
+            if (param.isNullOrBlank()) null
+            else InputSource.SafSource(param, inspection.displayName, inspection.sizeBytes)
         } catch (t: Throwable) {
             LogStore.event("SAF registration failed: ${t.javaClass.simpleName}")
             null
         }
 
-        if (source != null) {
-            val info = MediaProbe.probe(source)
-            if (info != null) {
-                LogStore.event("Video loaded via SAF (no copy): $name")
-                return LoadedVideo(source, info)
+        if (safSource != null) {
+            val probed = MediaProbe.probe(safSource)
+            if (probed != null) {
+                LogStore.event("FFmpeg input: SAF zero-copy (${safSource.ffmpegInput}) — accessible")
+                return LoadedVideo(safSource, probed.withSizeFallback(inspection.sizeBytes))
             }
-            LogStore.event("SAF input unreadable, falling back to cache copy")
+            LogStore.event("SAF input failed FFprobe verification — falling back to cache bridge")
         }
 
-        val copy = copyToCache(context, uri, name) ?: return null
-        val fileSource = InputSource.FileSource(copy.absolutePath, name, copy.length())
-        val info = MediaProbe.probe(fileSource) ?: return null
-        LogStore.event("Video loaded from cache copy: $name")
-        return LoadedVideo(fileSource, info)
-    }
+        // 2) Cache-file bridge (buffered streaming copy, large-file safe).
+        val copy = copyToCache(context, uri, inspection.displayName)
+            ?: throw VideoInputException(
+                VideoInputException.Kind.UNREADABLE,
+                "Unable to read this video."
+            )
+        val fileSource = InputSource.FileSource(
+            path = copy.absolutePath,
+            displayName = inspection.displayName,
+            sizeBytes = copy.length(),
+            deletable = true
+        )
 
-    private fun displayName(context: Context, uri: Uri): String? = try {
-        context.contentResolver.query(uri, null, null, null, null)?.use { c ->
-            val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (idx >= 0 && c.moveToFirst()) c.getString(idx) else null
+        val probed = MediaProbe.probe(fileSource)
+        if (probed != null) {
+            LogStore.event("FFmpeg input: cache bridge ${copy.absolutePath} — accessible")
+            return LoadedVideo(fileSource, probed)
         }
-    } catch (t: Throwable) {
-        uri.lastPathSegment
+
+        // FFprobe could not read even the local copy, but the platform decoded
+        // the Uri in inspect(): trust the platform metadata and stream from the
+        // copy — FFmpeg may still handle containers FFprobe's quick scan rejects.
+        LogStore.event("FFprobe failed on cache copy; using platform metadata")
+        return LoadedVideo(fileSource, inspection.platformInfo!!.withSizeFallback(copy.length()))
     }
 
-    private fun statSize(context: Context, uri: Uri): Long = try {
-        context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-    } catch (t: Throwable) {
-        -1L
+    /** One-shot helper: inspect + prepare. */
+    fun load(context: Context, uri: Uri): LoadedVideo {
+        val inspection = inspect(context, uri)
+        return prepareForFFmpeg(context, uri, inspection)
     }
 
-    private fun copyToCache(context: Context, uri: Uri, name: String): File? {
-        try {
+    /** Deletes any temporary bridge copy (called after streaming stops). */
+    fun releaseTemporaryCopy(loaded: LoadedVideo?) {
+        val source = loaded?.source
+        if (source is InputSource.FileSource && source.deletable) {
+            try {
+                File(source.path).delete()
+                LogStore.event("Temporary video copy deleted")
+            } catch (t: Throwable) {
+                LogStore.event("Could not delete temporary copy: ${t.javaClass.simpleName}")
+            }
+        }
+    }
+
+    private fun copyToCache(context: Context, uri: Uri, displayName: String): File? {
+        return try {
             val dir = File(context.cacheDir, "videos").apply { mkdirs() }
-            // Clear previous cache copies so we never accumulate huge files.
-            dir.listFiles()?.forEach { if (it.name != name) it.delete() }
-            val target = File(dir, name)
-            if (!target.exists() || target.length() == 0L) {
-                val input = context.contentResolver.openInputStream(uri) ?: return null
-                input.use { i -> target.outputStream().use { out -> i.copyTo(out) } }
+            // A new selection replaces any previous bridge copy.
+            dir.listFiles()?.forEach { it.delete() }
+            val safeName = displayName.replace(Regex("[^a-zA-Z0-9.\\-_ ]"), "_")
+            val target = File(dir, safeName)
+            LogStore.event("Copying video to temporary bridge file (buffered stream)...")
+            val input = context.contentResolver.openInputStream(uri)
+                ?: return null
+            input.use { rawIn ->
+                java.io.BufferedInputStream(rawIn, 256 * 1024).use { buffered ->
+                    java.io.FileOutputStream(target).use { out ->
+                        buffered.copyTo(out, 256 * 1024)
+                    }
+                }
             }
-            return target
+            target
         } catch (t: Throwable) {
-            LogStore.event("Cache copy failed: ${t.javaClass.simpleName}")
-            return null
+            LogStore.event("Cache bridge copy failed: ${t.javaClass.simpleName}")
+            null
         }
+    }
+
+    private fun looksLikeVideoMime(mime: String): Boolean {
+        val m = mime.lowercase()
+        return m.startsWith("video/") ||
+            m == "application/octet-stream" ||
+            m.contains("matroska") ||
+            m.contains("mp4") ||
+            m.contains("mpeg") ||
+            m.contains("avi")
     }
 }
+
+private fun VideoInfo.withSizeFallback(size: Long): VideoInfo =
+    if (sizeBytes > 0) this else copy(sizeBytes = size)

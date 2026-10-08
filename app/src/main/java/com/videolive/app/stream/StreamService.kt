@@ -181,10 +181,14 @@ class StreamService : Service() {
 
             var loaded = VideoRepository.current
             if (loaded == null || loaded.source.displayName != config.videoName) {
-                loaded = withContext(Dispatchers.IO) {
-                    VideoLoader.load(this@StreamService, Uri.parse(config.videoUri))
-                }
-                if (loaded == null) {
+                loaded = try {
+                    withContext(Dispatchers.IO) {
+                        VideoLoader.load(this@StreamService, Uri.parse(config.videoUri))
+                    }
+                } catch (e: com.videolive.app.media.VideoInputException) {
+                    failNow(e.message ?: "Unable to read this video.")
+                    return
+                } catch (t: Throwable) {
                     failNow("Unable to read this video.")
                     return
                 }
@@ -396,6 +400,13 @@ class StreamService : Service() {
         } catch (_: Throwable) {
         }
         pipePath?.let { safeClosePipe(it) }
+        // The temporary cache bridge copy (if one was made) is deleted after
+        // streaming stops. It will be re-created on the next start if needed.
+        try {
+            VideoLoader.releaseTemporaryCopy(VideoRepository.current)
+        } catch (_: Throwable) {
+        }
+        VideoRepository.current = null
         wakeLock?.let {
             try {
                 if (it.isHeld) it.release()
