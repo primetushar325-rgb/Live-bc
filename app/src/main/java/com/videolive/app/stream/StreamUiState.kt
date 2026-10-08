@@ -3,15 +3,16 @@ package com.videolive.app.stream
 /**
  * Explicit pipeline states. The Connection indicator only advances on real
  * evidence: ENCODING when the engine reports its output is configured,
- * CONNECTED when the first encoded frame reaches the muxer (i.e. the RTMP
- * output was accepted), STREAMING once packets keep flowing.
+ * PUBLISHING when the server accepts the publish and the first frame reaches
+ * the muxer (i.e. the RTMP output was accepted), STREAMING once packets keep
+ * flowing. A running FFmpeg process alone never counts as LIVE.
  */
 enum class Phase {
     IDLE,
     PREPARING,
     ENCODING,
     CONNECTING,
-    CONNECTED,
+    PUBLISHING,
     STREAMING,
     RECONNECTING,
     ERROR,
@@ -36,5 +37,7 @@ data class StreamUiState(
     val micActive: Boolean = false,
     val micMuted: Boolean = false,
     val hasVideoAudio: Boolean = true,
-    val volumePct: Int = 100
+    val volumePct: Int = 100,
+    val loopCount: Int = 0,
+    val networkOk: Boolean = true
 )

@@ -32,6 +32,8 @@ class LiveActivity : AppCompatActivity() {
     private lateinit var txtAudio: TextView
     private lateinit var btnMuteMic: TextView
     private lateinit var txtYouTubeHint: TextView
+    private lateinit var txtLoop: TextView
+    private lateinit var txtNetwork: TextView
 
     private var errorHandled = false
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -50,6 +52,8 @@ class LiveActivity : AppCompatActivity() {
         txtAudio = findViewById(R.id.txtAudio)
         btnMuteMic = findViewById(R.id.btnMuteMic)
         txtYouTubeHint = findViewById(R.id.txtYouTubeHint)
+        txtLoop = findViewById(R.id.txtLoop)
+        txtNetwork = findViewById(R.id.txtNetwork)
 
         findViewById<TextView>(R.id.btnStopLive).setOnClickListener { confirmStop() }
         findViewById<ImageButton>(R.id.btnLiveSettings).setOnClickListener {
@@ -97,7 +101,7 @@ class LiveActivity : AppCompatActivity() {
                 txtConnection.text = "Sending video ✓"
                 txtConnection.setTextColor(ContextCompat.getColor(this, R.color.green))
             }
-            Phase.CONNECTED -> {
+            Phase.PUBLISHING -> {
                 txtConnection.text = "RTMP Connected ✓"
                 txtConnection.setTextColor(ContextCompat.getColor(this, R.color.green))
             }
@@ -130,8 +134,14 @@ class LiveActivity : AppCompatActivity() {
         // Show the YouTube confirmation guidance once the encoder is actually
         // sending video — the app cannot see YouTube's broadcast state itself.
         txtYouTubeHint.visibility =
-            if (state.phase == Phase.CONNECTED || state.phase == Phase.STREAMING) View.VISIBLE
+            if (state.phase == Phase.PUBLISHING || state.phase == Phase.STREAMING) View.VISIBLE
             else View.GONE
+
+        txtLoop.text = "Loop ${state.loopCount + 1} • item 1/1 (${state.videoName})"
+        txtNetwork.text = if (state.networkOk) "OK" else "Poor / offline"
+        txtNetwork.setTextColor(
+            ContextCompat.getColor(this, if (state.networkOk) R.color.green else R.color.amber)
+        )
 
         val videoAudio = if (state.hasVideoAudio) "Video ON ${state.volumePct}%" else "Video silent"
         val micPart = when {

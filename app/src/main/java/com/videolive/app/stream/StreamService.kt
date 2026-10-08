@@ -293,7 +293,7 @@ class StreamService : Service() {
                         )
                     }
                     LogStore.event("Network unavailable — waiting ($attempt/$MAX_ATTEMPTS)")
-                    delay(backoffMs(attempt))
+                    stoppableDelay(backoffMs(attempt))
                     continue
                 }
 
@@ -374,6 +374,9 @@ class StreamService : Service() {
                 val result = ffmpeg.run(args, stageOnLog) { st ->
                     statsSeen++
                     lastProgressAt = System.currentTimeMillis()
+                    val loops =
+                        if (info.durationMs > 0) (st.time / info.durationMs).toInt() else 0
+                    val netOk = Net.isOnline(this@StreamService)
                     if (!everConnected) {
                         everConnected = true
                         // Everything below completes INSIDE the output open,
@@ -390,11 +393,13 @@ class StreamService : Service() {
                         post { s ->
                             if (s.phase == Phase.STOPPING || s.phase == Phase.ERROR) s
                             else s.copy(
-                                phase = Phase.CONNECTED,
-                                statusText = "RTMP connected ✓",
+                                phase = Phase.PUBLISHING,
+                                statusText = "Publishing...",
                                 liveFps = st.videoFps,
                                 liveBitrateKbps = st.bitrate.toInt(),
-                                speed = st.speed
+                                speed = st.speed,
+                                loopCount = loops,
+                                networkOk = netOk
                             )
                         }
                     } else {
@@ -409,7 +414,7 @@ class StreamService : Service() {
                             LogStore.event(
                                 "Stream health: frame #${st.videoFrameNumber}, ${st.videoFps} fps, " +
                                     "${st.bitrate.toInt()} kbps, out_time ${st.time} ms, " +
-                                    "total ${st.size} bytes"
+                                    "total ${st.size} bytes, loop ${loops + 1}"
                             )
                         }
                         post { s ->
@@ -419,7 +424,9 @@ class StreamService : Service() {
                                 statusText = "Sending video to YouTube...",
                                 liveFps = st.videoFps,
                                 liveBitrateKbps = st.bitrate.toInt(),
-                                speed = st.speed
+                                speed = st.speed,
+                                loopCount = loops,
+                                networkOk = netOk
                             )
                         }
                         if (!liveNotified) {
@@ -461,7 +468,7 @@ class StreamService : Service() {
                                 attempt = attempt
                             )
                         }
-                        delay(backoffMs(attempt))
+                        stoppableDelay(backoffMs(attempt))
                     }
                     is RunResult.Cancelled -> {
                         // A cancel here means the watchdog killed a stalled session.
@@ -478,7 +485,7 @@ class StreamService : Service() {
                                 attempt = attempt
                             )
                         }
-                        delay(backoffMs(attempt))
+                        stoppableDelay(backoffMs(attempt))
                     }
                     is RunResult.Failed -> {
                         val err = result.error
@@ -499,7 +506,7 @@ class StreamService : Service() {
                                 attempt = attempt
                             )
                         }
-                        delay(backoffMs(attempt))
+                        stoppableDelay(backoffMs(attempt))
                     }
                 }
             }
@@ -593,6 +600,16 @@ class StreamService : Service() {
     private fun backoffMs(attempt: Int): Long {
         val step = (attempt - 1).coerceIn(0, 6)
         return min((1L shl step) * 2000L, 30_000L)
+    }
+
+    /** Backoff delay that exits promptly when STOP LIVE is pressed. */
+    private suspend fun stoppableDelay(ms: Long) {
+        var left = ms
+        while (left > 0 && !stopRequested) {
+            val step = minOf(500L, left)
+            delay(step)
+            left -= step
+        }
     }
 
     private fun acquireWakeLock() {
