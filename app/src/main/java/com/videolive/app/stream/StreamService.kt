@@ -1,0 +1,484 @@
+package com.videolive.app.stream
+
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.net.Uri
+import android.os.Build
+import android.os.IBinder
+import android.os.PowerManager
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import com.arthenica.ffmpegkit.FFmpegKitConfig
+import com.arthenica.ffmpegkit.Statistics
+import com.videolive.app.MainActivity
+import com.videolive.app.R
+import com.videolive.app.data.SecurePrefs
+import com.videolive.app.data.VideoRepository
+import com.videolive.app.ffmpeg.ErrorKind
+import com.videolive.app.ffmpeg.FFmpegCommandBuilder
+import com.videolive.app.ffmpeg.FFmpegManager
+import com.videolive.app.ffmpeg.LogStore
+import com.videolive.app.ffmpeg.RunResult
+import com.videolive.app.media.VideoLoader
+import com.videolive.app.model.StreamConfig
+import com.videolive.app.util.Net
+import kotlin.math.min
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Foreground service that owns the entire streaming pipeline.
+ *
+ * Stability design:
+ *  - ONE FFmpeg session loops the video with -stream_loop -1; the RTMP output is
+ *    opened once and is never closed at a loop boundary.
+ *  - Reconnects happen ONLY on real network/RTMP failures or watchdog stalls,
+ *    with exponential backoff and a retry budget.
+ *  - A partial WakeLock keeps the CPU encode running while the screen is locked.
+ */
+class StreamService : Service() {
+
+    companion object {
+        const val ACTION_START = "com.videolive.app.action.START_STREAM"
+        const val ACTION_STOP = "com.videolive.app.action.STOP_STREAM"
+        const val EXTRA_CONFIG = "stream_config"
+        const val CHANNEL_ID = "vl_live_channel"
+        private const val NOTIFICATION_ID = 1001
+        private const val MAX_ATTEMPTS = 5
+        private const val WATCHDOG_STALL_MS = 30_000L
+
+        val uiState = MutableStateFlow(StreamUiState())
+
+        @Volatile
+        var isStreaming = false
+            private set
+
+        fun start(context: Context, config: StreamConfig) {
+            val intent = Intent(context, StreamService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_CONFIG, config)
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun stop(context: Context) {
+            context.startService(Intent(context, StreamService::class.java).setAction(ACTION_STOP))
+        }
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val ffmpeg = FFmpegManager()
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var streamJob: Job? = null
+    private var tickerJob: Job? = null
+
+    @Volatile private var stopRequested = false
+    private var startedAt = 0L
+    @Volatile private var lastProgressAt = System.currentTimeMillis()
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        createChannel()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_START -> {
+                if (isStreaming) {
+                    return START_NOT_STICKY
+                }
+                val config = extractConfig(intent)
+                if (config == null) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                stopRequested = false
+                startedAt = System.currentTimeMillis()
+                isStreaming = true
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    buildNotification(config.videoName),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+                acquireWakeLock()
+                streamJob?.cancel()
+                streamJob = scope.launch { runStream(config) }
+            }
+            ACTION_STOP -> requestStop()
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun extractConfig(intent: Intent): StreamConfig? = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getSerializableExtra(EXTRA_CONFIG, StreamConfig::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getSerializableExtra(EXTRA_CONFIG) as? StreamConfig
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
+    private fun requestStop() {
+        if (!isStreaming && streamJob?.isActive != true) {
+            stopSelf()
+            return
+        }
+        stopRequested = true
+        post { it.copy(phase = Phase.STOPPING, statusText = "Stopping...") }
+        LogStore.event("Stop requested by user")
+        MicMixer.stop()
+        ffmpeg.cancelCurrent()
+    }
+
+    private suspend fun runStream(config: StreamConfig) {
+        var pipePath: String? = null
+        post {
+            StreamUiState(
+                phase = Phase.STARTING,
+                statusText = "Preparing...",
+                videoName = config.videoName,
+                outWidth = config.outputSize().first,
+                outHeight = config.outputSize().second,
+                fps = config.fps,
+                configuredBitrateKbps = config.targetBitrateKbps(),
+                hasVideoAudio = config.hasAudio,
+                volumePct = config.videoVolumePct
+            )
+        }
+        startTicker()
+        try {
+            val key = SecurePrefs.getStreamKey(this).orEmpty()
+            val destination = FFmpegCommandBuilder.buildDestinationUrl(
+                config.fullUrlMode, config.serverUrl, config.fullUrl, key
+            )
+            if (destination == null) {
+                failNow("Please enter a valid server URL and Stream Key.")
+                return
+            }
+
+            var loaded = VideoRepository.current
+            if (loaded == null || loaded.source.displayName != config.videoName) {
+                loaded = withContext(Dispatchers.IO) {
+                    VideoLoader.load(this@StreamService, Uri.parse(config.videoUri))
+                }
+                if (loaded == null) {
+                    failNow("Unable to read this video.")
+                    return
+                }
+                VideoRepository.current = loaded
+            }
+            val info = loaded.info
+
+            // Microphone setup (only when requested).
+            var micActive = config.micOn
+            if (micActive) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                    != PackageManager.PERMISSION_GRANTED
+                ) {
+                    LogStore.event("Microphone permission missing — continuing without mic")
+                    micActive = false
+                } else {
+                    val initialPipe = withContext(Dispatchers.IO) {
+                        FFmpegKitConfig.registerNewFFmpegPipe(this@StreamService)
+                    }
+                    micActive = MicMixer.start(initialPipe)
+                    if (micActive) {
+                        pipePath = initialPipe
+                    } else {
+                        safeClosePipe(initialPipe)
+                        pipePath = null
+                        LogStore.event("Microphone unavailable — continuing with video audio only")
+                    }
+                }
+            }
+            post { it.copy(micActive = micActive) }
+
+            var attempt = 0
+            while (!stopRequested) {
+                // Network gate: don't burn retries while the radio is simply down.
+                if (!Net.isOnline(this)) {
+                    attempt++
+                    if (attempt > MAX_ATTEMPTS) {
+                        failNow("Internet connection lost. Could not recover the stream.")
+                        return
+                    }
+                    post {
+                        it.copy(
+                            phase = Phase.RECONNECTING,
+                            statusText = "Network problem...",
+                            attempt = attempt
+                        )
+                    }
+                    LogStore.event("Network unavailable — waiting ($attempt/$MAX_ATTEMPTS)")
+                    delay(backoffMs(attempt))
+                    continue
+                }
+
+                post {
+                    it.copy(
+                        phase = Phase.CONNECTING,
+                        statusText = if (attempt == 0) "Connecting..."
+                        else "Reconnecting $attempt/$MAX_ATTEMPTS...",
+                        attempt = attempt,
+                        liveFps = 0f,
+                        liveBitrateKbps = 0,
+                        speed = 0.0
+                    )
+                }
+
+                // Fresh mic pipe for every new RTMP session.
+                if (attempt > 0 && micActive) {
+                    pipePath?.let { safeClosePipe(it) }
+                    val freshPipe = withContext(Dispatchers.IO) {
+                        FFmpegKitConfig.registerNewFFmpegPipe(this@StreamService)
+                    }
+                    pipePath = freshPipe
+                    MicMixer.switchPipe(freshPipe)
+                }
+
+                val args = FFmpegCommandBuilder.build(
+                    config,
+                    info,
+                    loaded.source.ffmpegInput,
+                    destination,
+                    if (micActive) pipePath else null
+                )
+                LogStore.event("FFmpeg session starting (attempt ${attempt + 1})")
+                lastProgressAt = System.currentTimeMillis()
+                val sessionStartedAt = System.currentTimeMillis()
+                val watchdog = scope.launch { watchdogLoop() }
+                val result = ffmpeg.run(args) { st -> onStatistics(st) }
+                watchdog.cancel()
+
+                if (stopRequested) break
+
+                val ranSeconds = (System.currentTimeMillis() - sessionStartedAt) / 1000
+                // A long healthy run resets the retry budget.
+                if (ranSeconds >= 60) attempt = 0
+
+                when (result) {
+                    is RunResult.Success -> {
+                        LogStore.event("FFmpeg exited cleanly after ${ranSeconds}s (unexpected)")
+                        attempt++
+                        if (attempt > MAX_ATTEMPTS) {
+                            failNow("Streaming engine exited repeatedly.")
+                            return
+                        }
+                        post {
+                            it.copy(
+                                phase = Phase.RECONNECTING,
+                                statusText = "Stream interrupted — restarting $attempt/$MAX_ATTEMPTS...",
+                                attempt = attempt
+                            )
+                        }
+                        delay(backoffMs(attempt))
+                    }
+                    is RunResult.Cancelled -> {
+                        // A cancel here means the watchdog killed a stalled session.
+                        attempt++
+                        LogStore.event("Stream stalled — forcing reconnect ($attempt/$MAX_ATTEMPTS)")
+                        if (attempt > MAX_ATTEMPTS) {
+                            failNow("The stream kept stalling. Please try again.")
+                            return
+                        }
+                        post {
+                            it.copy(
+                                phase = Phase.RECONNECTING,
+                                statusText = "Reconnecting $attempt/$MAX_ATTEMPTS...",
+                                attempt = attempt
+                            )
+                        }
+                        delay(backoffMs(attempt))
+                    }
+                    is RunResult.Failed -> {
+                        val err = result.error
+                        LogStore.event("FFmpeg failed: ${err.userMessage}")
+                        if (err.kind == ErrorKind.AUTH || err.kind == ErrorKind.INPUT) {
+                            failNow(err.userMessage)
+                            return
+                        }
+                        attempt++
+                        if (attempt > MAX_ATTEMPTS) {
+                            failNow("${err.userMessage} (retry limit reached)")
+                            return
+                        }
+                        post {
+                            it.copy(
+                                phase = Phase.RECONNECTING,
+                                statusText = "Reconnecting $attempt/$MAX_ATTEMPTS — ${err.userMessage}",
+                                attempt = attempt
+                            )
+                        }
+                        delay(backoffMs(attempt))
+                    }
+                }
+            }
+
+            post { it.copy(phase = Phase.STOPPED, statusText = "Live ended") }
+            LogStore.event("Stream stopped cleanly")
+        } catch (t: Throwable) {
+            LogStore.event("Unexpected error: ${t.javaClass.simpleName}")
+            failNow("Unexpected error: ${t.javaClass.simpleName}")
+        } finally {
+            cleanup(pipePath)
+        }
+    }
+
+    private suspend fun watchdogLoop() {
+        while (isActive) {
+            delay(5000)
+            val idleMs = System.currentTimeMillis() - lastProgressAt
+            if (idleMs > WATCHDOG_STALL_MS && !stopRequested) {
+                LogStore.event("No encode progress for ${idleMs / 1000}s — restarting engine")
+                ffmpeg.cancelCurrent()
+                return
+            }
+        }
+    }
+
+    private fun onStatistics(st: Statistics) {
+        lastProgressAt = System.currentTimeMillis()
+        post { state ->
+            if (state.phase == Phase.STOPPING || state.phase == Phase.ERROR) state
+            else state.copy(
+                phase = Phase.STREAMING,
+                statusText = "Streaming...",
+                liveFps = st.videoFps,
+                liveBitrateKbps = st.bitrate.toInt(),
+                speed = st.speed
+            )
+        }
+    }
+
+    private fun failNow(message: String) {
+        post { it.copy(phase = Phase.ERROR, statusText = message, errorText = message) }
+        LogStore.event("ERROR: $message")
+    }
+
+    private fun startTicker() {
+        tickerJob?.cancel()
+        tickerJob = scope.launch {
+            while (isActive) {
+                post { it.copy(elapsedMs = System.currentTimeMillis() - startedAt) }
+                delay(1000)
+            }
+        }
+    }
+
+    private fun cleanup(pipePath: String?) {
+        isStreaming = false
+        tickerJob?.cancel()
+        try {
+            MicMixer.stop()
+        } catch (_: Throwable) {
+        }
+        pipePath?.let { safeClosePipe(it) }
+        wakeLock?.let {
+            try {
+                if (it.isHeld) it.release()
+            } catch (_: Throwable) {
+            }
+        }
+        wakeLock = null
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun safeClosePipe(path: String) {
+        try {
+            FFmpegKitConfig.closeFFmpegPipe(path)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun backoffMs(attempt: Int): Long {
+        val step = (attempt - 1).coerceIn(0, 6)
+        return min((1L shl step) * 2000L, 30_000L)
+    }
+
+    private fun acquireWakeLock() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "videolive:stream").apply {
+                setReferenceCounted(false)
+                acquire(12 * 60 * 60 * 1000L) // hard cap: 12 hours
+            }
+        } catch (t: Throwable) {
+            LogStore.event("WakeLock unavailable: ${t.javaClass.simpleName}")
+        }
+    }
+
+    private inline fun post(crossinline transform: (StreamUiState) -> StreamUiState) {
+        uiState.update { transform(it) }
+    }
+
+    private fun createChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "Live streaming",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+                channel.description = "Keeps the live stream running in the background"
+                channel.setShowBadge(false)
+                nm.createNotificationChannel(channel)
+            }
+        }
+    }
+
+    private fun buildNotification(videoName: String): Notification {
+        val openIntent = Intent(this, MainActivity::class.java)
+            .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val openPi = PendingIntent.getActivity(
+            this, 0, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val stopIntent = Intent(this, StreamService::class.java).setAction(ACTION_STOP)
+        val stopPi = PendingIntent.getService(
+            this, 1, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notify)
+            .setContentTitle("🔴 Live is running")
+            .setContentText("Video: $videoName")
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setWhen(startedAt)
+            .setUsesChronometer(true)
+            .setContentIntent(openPi)
+            .addAction(R.drawable.ic_stop, "Stop", stopPi)
+            .build()
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+}

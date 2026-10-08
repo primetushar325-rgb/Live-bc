@@ -1,0 +1,536 @@
+package com.videolive.app
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.text.InputType
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.MediaController
+import android.widget.SeekBar
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
+import android.widget.VideoView
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.videolive.app.data.SecurePrefs
+import com.videolive.app.data.SettingsRepository
+import com.videolive.app.data.VideoRepository
+import com.videolive.app.ffmpeg.FFmpegCommandBuilder
+import com.videolive.app.ffmpeg.FFmpegManager
+import com.videolive.app.media.LoadedVideo
+import com.videolive.app.media.VideoLoader
+import com.videolive.app.model.BitrateMode
+import com.videolive.app.model.LoopMode
+import com.videolive.app.model.Orientation
+import com.videolive.app.model.Quality
+import com.videolive.app.model.StreamConfig
+import com.videolive.app.stream.StreamService
+import com.videolive.app.util.DeviceCaps
+import com.videolive.app.util.Net
+import com.videolive.app.util.Texts
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var settingsRepo: SettingsRepository
+    private val ffmpegManager = FFmpegManager()
+
+    private var keyVisible = false
+    private var suppressMicListener = false
+    private var bitrateSelectionRestored = false
+
+    private lateinit var batteryWarning: TextView
+    private lateinit var liveBanner: TextView
+    private lateinit var previewFrame: FrameLayout
+    private lateinit var previewVideo: VideoView
+    private lateinit var previewThumb: ImageView
+    private lateinit var emptyPreview: LinearLayout
+    private lateinit var previewStatus: TextView
+    private lateinit var videoInfoBlock: LinearLayout
+    private lateinit var txtFileName: TextView
+    private lateinit var txtMeta: TextView
+    private lateinit var txtAudioPresent: TextView
+    private lateinit var switchFullUrl: SwitchCompat
+    private lateinit var serverKeyGroup: LinearLayout
+    private lateinit var fullUrlGroup: LinearLayout
+    private lateinit var etServerUrl: EditText
+    private lateinit var etStreamKey: EditText
+    private lateinit var etFullUrl: EditText
+    private lateinit var btnKeyEye: ImageButton
+    private lateinit var optVertical: LinearLayout
+    private lateinit var optHorizontal: LinearLayout
+    private lateinit var spinnerBitrate: Spinner
+    private lateinit var etBitrate: EditText
+    private lateinit var seekVolume: SeekBar
+    private lateinit var txtVolume: TextView
+    private lateinit var switchMic: SwitchCompat
+    private lateinit var optLoopOne: LinearLayout
+    private lateinit var optLoopAll: LinearLayout
+
+    private val qualityChips = mutableMapOf<Quality, TextView>()
+    private val fpsChips = mutableMapOf<Int, TextView>()
+
+    private val pickVideo =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) onVideoPicked(uri)
+        }
+
+    private val micPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                suppressMicListener = true
+                switchMic.isChecked = false
+                suppressMicListener = false
+                settingsRepo.micOn = false
+                toast("Microphone permission denied")
+            } else {
+                settingsRepo.micOn = true
+            }
+        }
+
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        settingsRepo = SettingsRepository(this)
+
+        batteryWarning = findViewById(R.id.batteryWarning)
+        liveBanner = findViewById(R.id.liveBanner)
+        previewFrame = findViewById(R.id.previewFrame)
+        previewVideo = findViewById(R.id.previewVideo)
+        previewThumb = findViewById(R.id.previewThumb)
+        emptyPreview = findViewById(R.id.emptyPreview)
+        previewStatus = findViewById(R.id.previewStatus)
+        videoInfoBlock = findViewById(R.id.videoInfoBlock)
+        txtFileName = findViewById(R.id.txtFileName)
+        txtMeta = findViewById(R.id.txtMeta)
+        txtAudioPresent = findViewById(R.id.txtAudioPresent)
+        switchFullUrl = findViewById(R.id.switchFullUrl)
+        serverKeyGroup = findViewById(R.id.serverKeyGroup)
+        fullUrlGroup = findViewById(R.id.fullUrlGroup)
+        etServerUrl = findViewById(R.id.etServerUrl)
+        etStreamKey = findViewById(R.id.etStreamKey)
+        etFullUrl = findViewById(R.id.etFullUrl)
+        btnKeyEye = findViewById(R.id.btnKeyEye)
+        optVertical = findViewById(R.id.optVertical)
+        optHorizontal = findViewById(R.id.optHorizontal)
+        spinnerBitrate = findViewById(R.id.spinnerBitrate)
+        etBitrate = findViewById(R.id.etBitrate)
+        seekVolume = findViewById(R.id.seekVolume)
+        txtVolume = findViewById(R.id.txtVolume)
+        switchMic = findViewById(R.id.switchMic)
+        optLoopOne = findViewById(R.id.optLoopOne)
+        optLoopAll = findViewById(R.id.optLoopAll)
+
+        qualityChips[Quality.Q360] = findViewById(R.id.q360)
+        qualityChips[Quality.Q480] = findViewById(R.id.q480)
+        qualityChips[Quality.Q720] = findViewById(R.id.q720)
+        qualityChips[Quality.Q1080] = findViewById(R.id.q1080)
+        fpsChips[24] = findViewById(R.id.fps24)
+        fpsChips[25] = findViewById(R.id.fps25)
+        fpsChips[30] = findViewById(R.id.fps30)
+        fpsChips[50] = findViewById(R.id.fps50)
+        fpsChips[60] = findViewById(R.id.fps60)
+
+        wireEvents()
+        restoreSettings()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkBatteryOptimization()
+        liveBanner.visibility = if (StreamService.isStreaming) View.VISIBLE else View.GONE
+        askNotificationPermissionIfNeeded()
+        if (VideoRepository.current == null) {
+            settingsRepo.videoUri?.let { reloadSavedVideo(Uri.parse(it)) }
+        } else {
+            renderVideoCard(VideoRepository.current!!)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (previewVideo.visibility == View.VISIBLE) {
+            stopPreview()
+        }
+    }
+
+    private fun wireEvents() {
+        findViewById<ImageButton>(R.id.btnSettings).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        findViewById<TextView>(R.id.btnChoose).setOnClickListener {
+            pickVideo.launch(
+                arrayOf(
+                    "video/*",
+                    "application/octet-stream",
+                    "video/x-matroska",
+                    "application/x-matroska"
+                )
+            )
+        }
+
+        previewThumb.setOnClickListener { startPreview() }
+        previewVideo.setOnCompletionListener { stopPreview() }
+
+        switchFullUrl.setOnCheckedChangeListener { _, checked ->
+            settingsRepo.fullUrlMode = checked
+            serverKeyGroup.visibility = if (checked) View.GONE else View.VISIBLE
+            fullUrlGroup.visibility = if (checked) View.VISIBLE else View.GONE
+        }
+
+        btnKeyEye.setOnClickListener {
+            keyVisible = !keyVisible
+            etStreamKey.inputType = if (keyVisible) {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            } else {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            }
+            etStreamKey.setSelection(etStreamKey.text.length)
+            btnKeyEye.setImageResource(if (keyVisible) R.drawable.ic_eye_off else R.drawable.ic_eye)
+        }
+
+        optVertical.setOnClickListener { selectOrientation(Orientation.VERTICAL) }
+        optHorizontal.setOnClickListener { selectOrientation(Orientation.HORIZONTAL) }
+
+        qualityChips.forEach { (q, view) -> view.setOnClickListener { selectQuality(q) } }
+        fpsChips.forEach { (fps, view) -> view.setOnClickListener { selectFps(fps) } }
+
+        spinnerBitrate.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            arrayOf("Auto", "Manual")
+        )
+        spinnerBitrate.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val manual = pos == 1
+                settingsRepo.bitrateMode = if (manual) BitrateMode.MANUAL else BitrateMode.AUTO
+                etBitrate.visibility = if (manual) View.VISIBLE else View.GONE
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        seekVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtVolume.text = "$progress%"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settingsRepo.videoVolumePct = sb?.progress ?: 100
+            }
+        })
+
+        switchMic.setOnCheckedChangeListener { _, checked ->
+            if (suppressMicListener) return@setOnCheckedChangeListener
+            if (checked) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    settingsRepo.micOn = true
+                } else {
+                    micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            } else {
+                settingsRepo.micOn = false
+            }
+        }
+
+        optLoopOne.setOnClickListener { selectLoop(LoopMode.ONE) }
+        optLoopAll.setOnClickListener {
+            toast("Loop All (playlist) is coming soon — Loop One keeps this video looping continuously.")
+        }
+
+        findViewById<TextView>(R.id.btnStartLive).setOnClickListener { validateAndStart() }
+        liveBanner.setOnClickListener { startActivity(Intent(this, LiveActivity::class.java)) }
+        batteryWarning.setOnClickListener { requestBatteryExemption() }
+    }
+
+    private fun restoreSettings() {
+        etServerUrl.setText(settingsRepo.serverUrl)
+        etFullUrl.setText(settingsRepo.fullUrl)
+        etStreamKey.setText(SecurePrefs.getStreamKey(this).orEmpty())
+        switchFullUrl.isChecked = settingsRepo.fullUrlMode
+        serverKeyGroup.visibility = if (settingsRepo.fullUrlMode) View.GONE else View.VISIBLE
+        fullUrlGroup.visibility = if (settingsRepo.fullUrlMode) View.VISIBLE else View.GONE
+
+        selectOrientation(settingsRepo.orientation)
+        selectQuality(settingsRepo.quality)
+        selectFps(settingsRepo.fps)
+
+        val savedVolume = settingsRepo.videoVolumePct
+        seekVolume.progress = savedVolume
+        txtVolume.text = "$savedVolume%"
+
+        suppressMicListener = true
+        switchMic.isChecked = settingsRepo.micOn
+        suppressMicListener = false
+
+        selectLoop(LoopMode.ONE)
+
+        etBitrate.setText(settingsRepo.manualBitrateKbps.toString())
+        val manual = settingsRepo.bitrateMode == BitrateMode.MANUAL
+        spinnerBitrate.setSelection(if (manual) 1 else 0)
+        etBitrate.visibility = if (manual) View.VISIBLE else View.GONE
+        bitrateSelectionRestored = true
+    }
+
+    private fun selectOrientation(o: Orientation) {
+        settingsRepo.orientation = o
+        optVertical.isSelected = o == Orientation.VERTICAL
+        optHorizontal.isSelected = o == Orientation.HORIZONTAL
+    }
+
+    private fun selectQuality(q: Quality) {
+        settingsRepo.quality = q
+        qualityChips.forEach { (k, v) -> v.isSelected = k == q }
+    }
+
+    private fun selectFps(fps: Int) {
+        settingsRepo.fps = fps
+        fpsChips.forEach { (k, v) -> v.isSelected = k == fps }
+    }
+
+    private fun selectLoop(mode: LoopMode) {
+        settingsRepo.loopMode = mode
+        optLoopOne.isSelected = mode == LoopMode.ONE
+        optLoopAll.isSelected = mode == LoopMode.ALL
+    }
+
+    private fun onVideoPicked(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: Throwable) {
+        }
+        settingsRepo.videoUri = uri.toString()
+        loadVideo(uri)
+    }
+
+    private fun reloadSavedVideo(uri: Uri) {
+        loadVideo(uri)
+    }
+
+    private fun loadVideo(uri: Uri) {
+        stopPreview()
+        previewStatus.text = getString(R.string.analyzing_video)
+        emptyPreview.visibility = View.VISIBLE
+        previewThumb.visibility = View.GONE
+        videoInfoBlock.visibility = View.GONE
+
+        lifecycleScope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                VideoLoader.load(this@MainActivity, uri)
+            }
+            if (loaded == null) {
+                settingsRepo.videoUri = null
+                previewStatus.text = getString(R.string.no_video_selected)
+                toast("Unable to read this video.")
+                return@launch
+            }
+            VideoRepository.current = loaded
+            renderVideoCard(loaded)
+        }
+    }
+
+    private fun renderVideoCard(loaded: LoadedVideo) {
+        val info = loaded.info
+        txtFileName.text = loaded.source.displayName
+        txtMeta.text = listOf(
+            Texts.formatDuration(info.durationMs),
+            "${info.width}x${info.height}",
+            "${info.fps} fps",
+            Texts.formatSize(info.sizeBytes)
+        ).joinToString("  •  ")
+        txtAudioPresent.text = if (info.hasAudio) {
+            "Audio: available${if (info.audioCodec.isNotEmpty()) " (${info.audioCodec})" else ""}"
+        } else {
+            "Audio: none — a silent track will be added for YouTube"
+        }
+        videoInfoBlock.visibility = View.VISIBLE
+        emptyPreview.visibility = View.GONE
+        previewThumb.visibility = View.GONE
+
+        val uriString = settingsRepo.videoUri ?: return
+        lifecycleScope.launch {
+            val bitmap = withContext(Dispatchers.IO) { loadThumbnail(Uri.parse(uriString)) }
+            if (bitmap != null && VideoRepository.current === loaded) {
+                previewThumb.setImageBitmap(bitmap)
+                previewThumb.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun loadThumbnail(uri: Uri): Bitmap? = try {
+        val mmr = MediaMetadataRetriever()
+        mmr.setDataSource(this, uri)
+        val bmp = mmr.frameAtTime
+        mmr.release()
+        bmp
+    } catch (t: Throwable) {
+        null
+    }
+
+    private fun startPreview() {
+        val uriString = settingsRepo.videoUri ?: return
+        previewThumb.visibility = View.GONE
+        emptyPreview.visibility = View.GONE
+        previewVideo.visibility = View.VISIBLE
+        try {
+            previewVideo.setVideoURI(Uri.parse(uriString))
+            val controller = MediaController(this)
+            controller.setAnchorView(previewFrame)
+            previewVideo.setMediaController(controller)
+            previewVideo.start()
+        } catch (t: Throwable) {
+            toast("Preview not available for this video.")
+            stopPreview()
+        }
+    }
+
+    private fun stopPreview() {
+        try {
+            previewVideo.stopPlayback()
+        } catch (_: Throwable) {
+        }
+        previewVideo.visibility = View.GONE
+        if (VideoRepository.current != null && previewThumb.drawable != null) {
+            previewThumb.visibility = View.VISIBLE
+        } else {
+            emptyPreview.visibility = View.VISIBLE
+            previewStatus.text = getString(R.string.no_video_selected)
+        }
+    }
+
+    private fun validateAndStart() {
+        val loaded = VideoRepository.current
+        if (loaded == null) {
+            toast("Please select a video.")
+            return
+        }
+        if (!switchFullUrl.isChecked) {
+            val server = etServerUrl.text.toString().trim()
+            val key = etStreamKey.text.toString().trim()
+            if (!FFmpegCommandBuilder.isValidRtmpUrl(server)) {
+                toast("Please enter a valid RTMP/RTMPS server URL.")
+                return
+            }
+            if (key.isEmpty()) {
+                toast("Please enter your YouTube Stream Key.")
+                return
+            }
+        } else {
+            val full = etFullUrl.text.toString().trim()
+            if (!FFmpegCommandBuilder.isValidRtmpUrl(full)) {
+                toast("Please enter a valid full RTMP/RTMPS URL.")
+                return
+            }
+        }
+        if (!Net.isOnline(this)) {
+            toast("Network connection unavailable.")
+            return
+        }
+        if (ffmpegManager.ffmpegVersion == "unavailable") {
+            toast("Streaming engine (FFmpeg) is not available on this device.")
+            return
+        }
+
+        // Persist everything the user just typed.
+        settingsRepo.serverUrl = etServerUrl.text.toString().trim()
+        settingsRepo.fullUrl = etFullUrl.text.toString().trim()
+        val manualKbps = etBitrate.text.toString().toIntOrNull() ?: settingsRepo.manualBitrateKbps
+        settingsRepo.manualBitrateKbps = manualKbps
+
+        SecurePrefs.saveStreamKey(this, etStreamKey.text.toString().trim())
+
+        var fps = settingsRepo.fps
+        val (adjustedFps, note) = DeviceCaps.adjustFpsIfNeeded(settingsRepo.quality.label, fps)
+        if (note != null) {
+            fps = adjustedFps
+            selectFps(fps)
+            toast(note)
+        }
+
+        val config = StreamConfig(
+            videoUri = settingsRepo.videoUri.orEmpty(),
+            videoName = loaded.source.displayName,
+            hasAudio = loaded.info.hasAudio,
+            orientation = settingsRepo.orientation,
+            quality = settingsRepo.quality,
+            fps = fps,
+            bitrateMode = settingsRepo.bitrateMode,
+            manualBitrateKbps = settingsRepo.manualBitrateKbps,
+            videoVolumePct = settingsRepo.videoVolumePct,
+            micOn = settingsRepo.micOn,
+            loopMode = LoopMode.ONE,
+            fullUrlMode = settingsRepo.fullUrlMode,
+            serverUrl = settingsRepo.serverUrl,
+            fullUrl = settingsRepo.fullUrl
+        )
+
+        StreamService.start(this, config)
+        startActivity(Intent(this, LiveActivity::class.java))
+    }
+
+    private fun checkBatteryOptimization() {
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        val exempt = pm.isIgnoringBatteryOptimizations(packageName)
+        batteryWarning.visibility = if (exempt) View.GONE else View.VISIBLE
+    }
+
+    private fun requestBatteryExemption() {
+        try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$packageName")
+                )
+            )
+        } catch (t: Throwable) {
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (t2: Throwable) {
+                toast("Please allow unrestricted battery usage for this app in system settings.")
+            }
+        }
+    }
+
+    private fun askNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+}
