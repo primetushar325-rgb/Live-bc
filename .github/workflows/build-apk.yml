@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -49,3 +52,14 @@ jobs:
           name: VideoLive-apk
           path: out/VideoLive.apk
           if-no-files-found: error
+
+      - name: Publish APK to Releases (direct .apk download)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh release delete apk-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create apk-latest out/VideoLive.apk \
+            --title "Video Live APK (latest build)" \
+            --notes "Auto-published APK from branch ${GITHUB_REF_NAME} @ ${GITHUB_SHA}. Download **VideoLive.apk** (Assets below) and install it directly." \
+            --latest
