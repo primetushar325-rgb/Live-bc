@@ -22,7 +22,7 @@ sealed class EngineStatus {
  * Availability is NOT decided by "the class exists". This:
  *  1. detects the device ABI(s),
  *  2. inventories the native libraries actually packaged inside the installed
- *     APK (lib/<abi>/*.so),
+ *     APK (the lib/<abi>/ .so entries),
  *  3. loads the FFmpegKit native engine,
  *  4. runs a harmless real execution test (`ffmpeg -version`) and checks the
  *     return code.
