@@ -80,7 +80,7 @@ object FFmpegRuntime {
         //    during init; if it is missing the device dies with NoClassDefFoundError.
         try {
             Class.forName("com.arthenica.smartexception.java.Exceptions")
-            Class.forName("com.arthenica.smartexception.Exceptions")
+            Class.forName("com.arthenica.smartexception.AbstractExceptions")
             LogStore.event("SmartException dependency loaded")
         } catch (t: Throwable) {
             val reason = "SmartException classes missing from APK: " +
