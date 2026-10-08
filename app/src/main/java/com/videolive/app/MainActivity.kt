@@ -588,6 +588,10 @@ class MainActivity : AppCompatActivity() {
             fullUrl = settingsRepo.fullUrl
         )
 
+        com.videolive.app.ffmpeg.LogStore.event(
+            "Source URI validated: ${loaded.source.displayName} " +
+                "(${if (loaded.source.isTemporaryCopy) "cache bridge" else "direct read"})"
+        )
         StreamService.start(this, config)
         startActivity(Intent(this, LiveActivity::class.java))
     }

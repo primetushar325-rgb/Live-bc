@@ -18,7 +18,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.arthenica.ffmpegkit.FFmpegKitConfig
-import com.arthenica.ffmpegkit.Statistics
 import com.videolive.app.MainActivity
 import com.videolive.app.R
 import com.videolive.app.data.SecurePrefs
@@ -66,6 +65,17 @@ class StreamService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val MAX_ATTEMPTS = 5
         private const val WATCHDOG_STALL_MS = 30_000L
+        private const val CONNECT_TIMEOUT_MS = 15_000L
+
+        // Markers in FFmpeg output that mean the RTMP/network layer failed.
+        private val RTMP_FAILURE_MARKERS = listOf(
+            "failed to connect", "connection refused", "connection reset",
+            "connection timed out", "operation timed out", "broken pipe",
+            "network is unreachable", "host not found", "could not resolve",
+            "handshake failed", "i/o error", "input/output error",
+            "server error", "not authorized", "access denied", "403",
+            "tls error", "ssl error", "connection ended", "error writing"
+        )
 
         val uiState = MutableStateFlow(StreamUiState())
 
@@ -73,11 +83,22 @@ class StreamService : Service() {
         var isStreaming = false
             private set
 
+        /** Last config used, so the Live screen can offer a Retry on ERROR. */
+        @Volatile
+        private var lastConfig: StreamConfig? = null
+
         fun start(context: Context, config: StreamConfig) {
             val intent = Intent(context, StreamService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_CONFIG, config)
             ContextCompat.startForegroundService(context, intent)
+        }
+
+        /** Restarts the last attempted stream (used by the Retry action). */
+        fun retry(context: Context): Boolean {
+            val config = lastConfig ?: return false
+            start(context, config)
+            return true
         }
 
         fun stop(context: Context) {
@@ -94,6 +115,11 @@ class StreamService : Service() {
     @Volatile private var stopRequested = false
     private var startedAt = 0L
     @Volatile private var lastProgressAt = System.currentTimeMillis()
+
+    // Per-FFmpeg-session evidence flags.
+    @Volatile private var everConnected = false
+    @Volatile private var connectTimedOut = false
+    @Volatile private var liveNotified = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -113,7 +139,9 @@ class StreamService : Service() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
+                lastConfig = config
                 stopRequested = false
+                liveNotified = false
                 startedAt = System.currentTimeMillis()
                 isStreaming = true
                 ServiceCompat.startForeground(
@@ -156,9 +184,10 @@ class StreamService : Service() {
 
     private suspend fun runStream(config: StreamConfig) {
         var pipePath: String? = null
+        LogStore.event("START LIVE requested")
         post {
             StreamUiState(
-                phase = Phase.STARTING,
+                phase = Phase.PREPARING,
                 statusText = "Preparing...",
                 videoName = config.videoName,
                 outWidth = config.outputSize().first,
@@ -172,13 +201,21 @@ class StreamService : Service() {
         startTicker()
         try {
             val key = SecurePrefs.getStreamKey(this).orEmpty()
+            if (key.isBlank() && !config.fullUrlMode) {
+                LogStore.event("Startup aborted: stream key is empty")
+                failNow("Please enter your YouTube Stream Key.")
+                return
+            }
             val destination = FFmpegCommandBuilder.buildDestinationUrl(
                 config.fullUrlMode, config.serverUrl, config.fullUrl, key
             )
             if (destination == null) {
-                failNow("Please enter a valid server URL and Stream Key.")
+                LogStore.event("Startup aborted: RTMP destination URL is malformed")
+                failNow("Please enter a valid RTMP/RTMPS server URL and Stream Key (no spaces).")
                 return
             }
+            // Sanitize masks the path (stream key) of rtmp(s) URLs.
+            LogStore.event("RTMP destination validated: $destination")
 
             val loaded: LoadedVideo =
                 VideoRepository.current?.takeIf { it.source.displayName == config.videoName }
@@ -187,14 +224,27 @@ class StreamService : Service() {
                             VideoLoader.load(this@StreamService, Uri.parse(config.videoUri))
                         }
                     } catch (e: com.videolive.app.media.VideoInputException) {
+                        LogStore.event("Startup aborted: input preparation failed")
                         failNow(e.message ?: "Unable to read this video.")
                         return
                     } catch (t: Throwable) {
+                        LogStore.event("Startup aborted: input preparation crashed (${t.javaClass.simpleName})")
                         failNow("Unable to read this video.")
                         return
                     }
             VideoRepository.current = loaded
             val info = loaded.info
+            LogStore.event(
+                "Input prepared: " +
+                    (if (loaded.source.isTemporaryCopy) "cache bridge copy" else "direct read") +
+                    " | ${info.width}x${info.height}, ${info.fps} fps, " +
+                    "duration ${info.durationMs / 1000}s, audio=${if (info.hasAudio) "yes" else "no"}"
+            )
+            LogStore.event(
+                "Output plan: H.264 + AAC -> FLV -> RTMP, " +
+                    "${config.outputSize().first}x${config.outputSize().second} @ ${config.fps} fps, " +
+                    "${config.targetBitrateKbps()} kbps, loop=in-engine (-stream_loop -1)"
+            )
 
             // Microphone setup (only when requested).
             var micActive = config.micOn
@@ -270,14 +320,100 @@ class StreamService : Service() {
                     destination,
                     if (micActive) pipePath else null
                 )
+                // Full command for diagnostics — destination (contains the stream
+                // key) is replaced before logging; Sanitize masks it anyway.
+                val maskedCommand = args.joinToString(" ") {
+                    if (it == destination) "${destination.substringBefore("://")}://<hidden-key>" else it
+                }
+                LogStore.event("FFmpeg command: $maskedCommand")
                 LogStore.event("FFmpeg session starting (attempt ${attempt + 1})")
+                LogStore.event("Connecting to RTMP server...")
+
+                // Reset per-session evidence flags.
+                everConnected = false
+                connectTimedOut = false
+                var statsSeen = 0
+                var inputLogged = false
+                var encoderLogged = false
+                var muxerLogged = false
+                var rtmpFailureLogged = false
+                val stageOnLog: (String) -> Unit = { line ->
+                    val l = line.lowercase()
+                    if (!inputLogged && l.contains("input #")) {
+                        inputLogged = true
+                        LogStore.event("FFmpeg opened the input successfully")
+                    }
+                    if (!encoderLogged && l.contains("stream #") && l.contains("->")) {
+                        encoderLogged = true
+                        LogStore.event("Encoder initialized (H.264/AAC mapping active)")
+                    }
+                    if (!muxerLogged && l.contains("output #")) {
+                        muxerLogged = true
+                        LogStore.event("FLV muxer initialized")
+                        post {
+                            if (it.phase == Phase.CONNECTING || it.phase == Phase.PREPARING) {
+                                it.copy(phase = Phase.ENCODING, statusText = "Encoder started...")
+                            } else it
+                        }
+                    }
+                    if (!rtmpFailureLogged && RTMP_FAILURE_MARKERS.any { l.contains(it) }) {
+                        rtmpFailureLogged = true
+                        LogStore.event("Engine reported RTMP/network failure: ${line.trim().take(180)}")
+                    }
+                }
+
                 lastProgressAt = System.currentTimeMillis()
                 val sessionStartedAt = System.currentTimeMillis()
-                val watchdog = scope.launch { watchdogLoop() }
-                val result = ffmpeg.run(args) { st -> onStatistics(st) }
+                val watchdog = scope.launch { watchdogLoop(sessionStartedAt) }
+                val result = ffmpeg.run(args, stageOnLog) { st ->
+                    statsSeen++
+                    lastProgressAt = System.currentTimeMillis()
+                    if (!everConnected) {
+                        everConnected = true
+                        LogStore.event("RTMP connection accepted — first encoded frame muxed")
+                        post { s ->
+                            if (s.phase == Phase.STOPPING || s.phase == Phase.ERROR) s
+                            else s.copy(
+                                phase = Phase.CONNECTED,
+                                statusText = "Connected ✓",
+                                liveFps = st.videoFps,
+                                liveBitrateKbps = st.bitrate.toInt(),
+                                speed = st.speed
+                            )
+                        }
+                    } else {
+                        if (statsSeen == 2) {
+                            LogStore.event("STREAMING confirmed — packets flowing continuously")
+                        }
+                        post { s ->
+                            if (s.phase == Phase.STOPPING || s.phase == Phase.ERROR) s
+                            else s.copy(
+                                phase = Phase.STREAMING,
+                                statusText = "Streaming...",
+                                liveFps = st.videoFps,
+                                liveBitrateKbps = st.bitrate.toInt(),
+                                speed = st.speed
+                            )
+                        }
+                        if (!liveNotified) {
+                            liveNotified = true
+                            refreshNotification(config.videoName, live = true)
+                        }
+                    }
+                }
                 watchdog.cancel()
 
                 if (stopRequested) break
+
+                if (connectTimedOut) {
+                    LogStore.event("ERROR: RTMP connection timed out after ${CONNECT_TIMEOUT_MS / 1000}s")
+                    failNow(
+                        "RTMP connection timed out. The server did not accept the " +
+                            "connection within ${CONNECT_TIMEOUT_MS / 1000} seconds. " +
+                            "Check your internet/firewall and try again."
+                    )
+                    return
+                }
 
                 val ranSeconds = (System.currentTimeMillis() - sessionStartedAt) / 1000
                 // A long healthy run resets the retry budget.
@@ -351,29 +487,31 @@ class StreamService : Service() {
         }
     }
 
-    private suspend fun watchdogLoop() {
+    private suspend fun watchdogLoop(sessionStartedAt: Long) {
         while (coroutineContext.isActive) {
-            delay(5000)
-            val idleMs = System.currentTimeMillis() - lastProgressAt
-            if (idleMs > WATCHDOG_STALL_MS && !stopRequested) {
-                LogStore.event("No encode progress for ${idleMs / 1000}s — restarting engine")
-                ffmpeg.cancelCurrent()
-                return
+            delay(2000)
+            if (stopRequested) continue
+            if (!everConnected) {
+                // Connection timeout: the RTMP output was not accepted within
+                // the budget. Stop the attempt cleanly instead of leaving the
+                // UI stuck on "Connecting..." forever.
+                val waited = System.currentTimeMillis() - sessionStartedAt
+                if (waited > CONNECT_TIMEOUT_MS) {
+                    connectTimedOut = true
+                    LogStore.event(
+                        "No connection established in ${CONNECT_TIMEOUT_MS / 1000}s — aborting attempt"
+                    )
+                    ffmpeg.cancelCurrent()
+                    return
+                }
+            } else {
+                val idleMs = System.currentTimeMillis() - lastProgressAt
+                if (idleMs > WATCHDOG_STALL_MS) {
+                    LogStore.event("No encode progress for ${idleMs / 1000}s — restarting engine")
+                    ffmpeg.cancelCurrent()
+                    return
+                }
             }
-        }
-    }
-
-    private fun onStatistics(st: Statistics) {
-        lastProgressAt = System.currentTimeMillis()
-        post { state ->
-            if (state.phase == Phase.STOPPING || state.phase == Phase.ERROR) state
-            else state.copy(
-                phase = Phase.STREAMING,
-                statusText = "Streaming...",
-                liveFps = st.videoFps,
-                liveBitrateKbps = st.bitrate.toInt(),
-                speed = st.speed
-            )
         }
     }
 
@@ -462,7 +600,17 @@ class StreamService : Service() {
         }
     }
 
-    private fun buildNotification(videoName: String): Notification {
+    /** Re-publishes the foreground notification (e.g. once we are really LIVE). */
+    private fun refreshNotification(videoName: String, live: Boolean) {
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, buildNotification(videoName, live))
+        } catch (t: Throwable) {
+            LogStore.event("Notification update failed: ${t.javaClass.simpleName}")
+        }
+    }
+
+    private fun buildNotification(videoName: String, live: Boolean = false): Notification {
         val openIntent = Intent(this, MainActivity::class.java)
             .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val openPi = PendingIntent.getActivity(
@@ -476,8 +624,8 @@ class StreamService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notify)
-            .setContentTitle("🔴 Live is running")
-            .setContentText("Video: $videoName")
+            .setContentTitle(if (live) "🔴 LIVE: $videoName" else "Preparing live stream")
+            .setContentText(if (live) "Streaming to YouTube" else "Video: $videoName")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)

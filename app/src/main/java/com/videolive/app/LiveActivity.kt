@@ -92,11 +92,23 @@ class LiveActivity : AppCompatActivity() {
 
         when (state.phase) {
             Phase.STREAMING -> {
-                txtConnection.text = "Stable ✓"
+                txtConnection.text = "Streaming ✓"
                 txtConnection.setTextColor(ContextCompat.getColor(this, R.color.green))
             }
-            Phase.CONNECTING, Phase.STARTING -> {
+            Phase.CONNECTED -> {
+                txtConnection.text = "Connected ✓"
+                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.green))
+            }
+            Phase.ENCODING -> {
+                txtConnection.text = "Encoder started…"
+                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.amber))
+            }
+            Phase.CONNECTING -> {
                 txtConnection.text = "Connecting…"
+                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.amber))
+            }
+            Phase.PREPARING -> {
+                txtConnection.text = "Preparing…"
                 txtConnection.setTextColor(ContextCompat.getColor(this, R.color.amber))
             }
             Phase.RECONNECTING -> {
@@ -124,11 +136,26 @@ class LiveActivity : AppCompatActivity() {
         btnMuteMic.visibility = if (state.micActive) View.VISIBLE else View.GONE
         btnMuteMic.setText(if (state.micMuted) R.string.unmute_mic else R.string.mute_mic)
 
+        if (state.phase != Phase.ERROR) {
+            errorHandled = false
+        }
+
         when (state.phase) {
             Phase.ERROR -> {
                 if (!errorHandled) {
                     errorHandled = true
-                    mainHandler.postDelayed({ finish() }, 3500)
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Streaming failed")
+                        .setMessage(
+                            (state.errorText ?: "Unknown error.") +
+                                "\n\nOpen Advanced Logs (Settings) for the exact stage and reason."
+                        )
+                        .setPositiveButton("Retry") { _, _ ->
+                            StreamService.retry(this)
+                        }
+                        .setNegativeButton("Close") { _, _ -> finish() }
+                        .setCancelable(false)
+                        .show()
                 }
             }
             Phase.STOPPED -> {

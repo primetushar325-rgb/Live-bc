@@ -116,7 +116,15 @@ object FFmpegCommandBuilder {
         return args
     }
 
-    /** Combines server + key (or the advanced full URL) into the final destination. */
+    /**
+     * Combines server + key (or the advanced full URL) into the final
+     * destination. Returns null when anything is malformed. Validates BEFORE
+     * the encoder ever starts:
+     *  - scheme must be rtmp:// or rtmps://
+     *  - no whitespace anywhere (spaces break the connection silently)
+     *  - server must have a host part; key must be non-empty
+     *  - exactly ONE slash joins server and key (no duplicates)
+     */
     fun buildDestinationUrl(
         fullUrlMode: Boolean,
         serverUrl: String,
@@ -125,15 +133,36 @@ object FFmpegCommandBuilder {
     ): String? {
         return if (fullUrlMode) {
             val url = fullUrl.trim()
-            if (isValidRtmpUrl(url)) url else null
+            if (isValidRtmpUrl(url) && url.none { it.isWhitespace() } && hasHostAndPath(url)) url
+            else null
         } else {
             val server = serverUrl.trim().trimEnd('/')
             val key = streamKey.trim()
-            if (!isValidRtmpUrl(server) || key.isEmpty()) null
-            else "$server/$key"
+            when {
+                !isValidRtmpUrl(server) -> null
+                server.any { it.isWhitespace() } -> null
+                !hasHost(server) -> null
+                key.isEmpty() -> null
+                key.any { it.isWhitespace() } -> null
+                else -> "$server/$key"
+            }
         }
     }
 
     fun isValidRtmpUrl(url: String): Boolean =
         url.startsWith("rtmp://") || url.startsWith("rtmps://")
+
+    /** rtmp(s)://<host>[:port] — host part must be present. */
+    private fun hasHost(url: String): Boolean {
+        val rest = url.substringAfter("://")
+        val hostPart = rest.substringBefore('/').substringBefore('?')
+        return hostPart.isNotEmpty()
+    }
+
+    /** Full-URL mode additionally requires a path after the host. */
+    private fun hasHostAndPath(url: String): Boolean {
+        val rest = url.substringAfter("://")
+        val slash = rest.indexOf('/')
+        return slash > 0 && slash < rest.length - 1
+    }
 }

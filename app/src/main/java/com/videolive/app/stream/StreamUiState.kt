@@ -1,7 +1,22 @@
 package com.videolive.app.stream
 
+/**
+ * Explicit pipeline states. The Connection indicator only advances on real
+ * evidence: ENCODING when the engine reports its output is configured,
+ * CONNECTED when the first encoded frame reaches the muxer (i.e. the RTMP
+ * output was accepted), STREAMING once packets keep flowing.
+ */
 enum class Phase {
-    IDLE, STARTING, CONNECTING, STREAMING, RECONNECTING, STOPPING, ERROR, STOPPED
+    IDLE,
+    PREPARING,
+    ENCODING,
+    CONNECTING,
+    CONNECTED,
+    STREAMING,
+    RECONNECTING,
+    ERROR,
+    STOPPING,
+    STOPPED
 }
 
 data class StreamUiState(

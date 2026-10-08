@@ -40,10 +40,13 @@ class FFmpegManager {
 
     /**
      * Runs one FFmpeg session and suspends until it ends.
-     * [onStats] receives periodic encode statistics (fps, bitrate, speed, time).
+     * [onLog] receives every raw engine output line (already sanitized by the
+     * caller pipeline) so the service can detect pipeline stages and RTMP
+     * failures; [onStats] receives periodic encode statistics.
      */
     suspend fun run(
         args: List<String>,
+        onLog: (String) -> Unit,
         onStats: (Statistics) -> Unit
     ): RunResult = suspendCancellableCoroutine { cont ->
         val complete = FFmpegSessionCompleteCallback { s ->
@@ -61,7 +64,12 @@ class FFmpegManager {
             if (cont.isActive) cont.resume(result)
         }
         val logCallback = LogCallback { log ->
-            LogStore.append(log.message ?: "")
+            val message = log.message ?: ""
+            LogStore.append(message)
+            try {
+                onLog(message)
+            } catch (_: Throwable) {
+            }
         }
         val statsCallback = StatisticsCallback { st ->
             onStats(st)

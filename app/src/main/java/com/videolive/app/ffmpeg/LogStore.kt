@@ -19,10 +19,11 @@ object LogStore {
     fun append(rawLine: String) {
         val line = Sanitize.mask(rawLine).trimEnd()
         if (line.isEmpty()) return
+        val stamp = timeFormat.format(Date())
         for (l in line.split('\n')) {
             val clean = l.trimEnd()
             if (clean.isEmpty()) continue
-            lines.addLast(clean)
+            lines.addLast("[$stamp] $clean")
             if (lines.size > CAPACITY) lines.removeFirst()
         }
     }
