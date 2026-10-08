@@ -81,12 +81,25 @@ package from a GitHub release and **verifies it by SHA-256 before building**
 Requires JDK 17 and Android SDK 35 (the CI workflow sets these up automatically).
 
 ```bash
-./gradlew :app:assembleDebug
-# APK: app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleDebug :app:assembleRelease
+# Debug APK:   app/build/outputs/apk/debug/app-debug.apk
+# Release APK: app/build/outputs/apk/release/app-release.apk (signed when
+#              RELEASE_KEYSTORE_FILE etc. env vars are provided, as in CI)
 ```
 
 The **Build APK** GitHub Actions workflow (`.github/workflows/build-apk.yml`) runs on every
-push and uploads `VideoLive.apk` as a downloadable artifact.
+push, builds **both** debug and signed release APKs, verifies that the FFmpeg native
+libraries are actually packaged for all 4 ABIs (arm64-v8a, armeabi-v7a, x86, x86_64),
+and publishes both APKs to the repository's **Releases** page (`apk-latest` tag).
+
+## FFmpeg runtime verification
+
+The app never assumes FFmpeg exists just because the library is bundled. `FFmpegRuntime`
+detects the device ABI, inventories the native `.so` files packaged inside the installed
+APK, loads the engine, and runs a real `ffmpeg -version` execution test — all logged to
+the sanitized Advanced Logs screen. Architecture mismatches report
+"FFmpeg is not available for this device architecture."; runtime failures report
+"Streaming engine initialization failed." with the real reason in the logs.
 
 ## Testing checklist
 

@@ -34,7 +34,7 @@ import com.videolive.app.data.SecurePrefs
 import com.videolive.app.data.SettingsRepository
 import com.videolive.app.data.VideoRepository
 import com.videolive.app.ffmpeg.FFmpegCommandBuilder
-import com.videolive.app.ffmpeg.FFmpegManager
+import com.videolive.app.ffmpeg.FFmpegRuntime
 import com.videolive.app.media.LoadedVideo
 import com.videolive.app.media.VideoInputException
 import com.videolive.app.media.VideoLoader
@@ -55,7 +55,6 @@ import kotlinx.coroutines.withContext
 class MainActivity : AppCompatActivity() {
 
     private lateinit var settingsRepo: SettingsRepository
-    private val ffmpegManager = FFmpegManager()
 
     private var keyVisible = false
     private var suppressMicListener = false
@@ -158,6 +157,12 @@ class MainActivity : AppCompatActivity() {
 
         wireEvents()
         restoreSettings()
+        // Warm up the streaming engine in the background: loads the native
+        // FFmpeg libraries and runs the -version execution test so the result
+        // (and the real reason if it fails) is in Advanced Logs immediately.
+        lifecycleScope.launch(Dispatchers.IO) {
+            FFmpegRuntime.verify(this@MainActivity)
+        }
     }
 
     override fun onResume() {
@@ -542,8 +547,11 @@ class MainActivity : AppCompatActivity() {
             toast("Network connection unavailable.")
             return
         }
-        if (ffmpegManager.ffmpegVersion == "unavailable") {
-            toast("Streaming engine (FFmpeg) is not available on this device.")
+        // Real FFmpeg runtime verification: native library present for this
+        // device's ABI AND a successful `ffmpeg -version` execution test.
+        val engine = FFmpegRuntime.verify(this)
+        if (!engine.ready) {
+            toast(engine.userMessage + " Check Advanced Logs for the exact reason.")
             return
         }
 

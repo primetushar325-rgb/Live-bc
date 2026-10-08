@@ -10,7 +10,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.arthenica.ffmpegkit.FFmpegKitConfig
+import com.videolive.app.ffmpeg.FFmpegRuntime
 import com.videolive.app.util.DeviceCaps
 
 class SettingsActivity : AppCompatActivity() {
@@ -35,12 +35,19 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         val engineInfo = findViewById<TextView>(R.id.txtEngineInfo)
-        val ffmpegVersion = try {
-            FFmpegKitConfig.getFFmpegVersion() ?: "unknown"
-        } catch (t: Throwable) {
-            "unavailable"
+        val report = FFmpegRuntime.verify(this)
+        val versionLine = "FFmpeg ${report.ffmpegVersion ?: "unavailable"}"
+        val testLine = if (report.ready) {
+            "Runtime test: PASSED ✓"
+        } else {
+            "Runtime test: FAILED — ${report.userMessage} (see Advanced Logs)"
         }
-        engineInfo.text = "FFmpeg $ffmpegVersion\n${DeviceCaps.describe()}"
+        engineInfo.text = versionLine +
+            "\n" + testLine +
+            "\nDevice ABI: " + report.deviceAbis.joinToString(", ") +
+            "\nPackaged ABIs: " +
+            (report.apkAbis.joinToString(", ").ifEmpty { "none found" }) +
+            "\n" + DeviceCaps.describe()
 
         findViewById<TextView>(R.id.btnOpenLogs).setOnClickListener {
             startActivity(Intent(this, LogsActivity::class.java))

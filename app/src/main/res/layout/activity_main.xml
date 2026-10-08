@@ -862,22 +862,22 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:background="@drawable/bg_option_selector"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
+                android:orientation="vertical"
                 android:padding="14dp">
 
                 <TextView
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
+                    android:maxLines="1"
                     android:text="@string/loop_one"
                     android:textColor="@drawable/option_text_selector"
                     android:textSize="14sp"
                     android:textStyle="bold" />
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
                     android:text="@string/loop_one_sub"
                     android:textColor="@color/text_faint"
                     android:textSize="11sp" />
@@ -890,22 +890,22 @@
                 android:layout_marginTop="8dp"
                 android:alpha="0.55"
                 android:background="@drawable/bg_option_selector"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
+                android:orientation="vertical"
                 android:padding="14dp">
 
                 <TextView
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
+                    android:maxLines="1"
                     android:text="@string/loop_all"
                     android:textColor="@color/text_secondary"
                     android:textSize="14sp"
                     android:textStyle="bold" />
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
                     android:text="@string/loop_all_sub"
                     android:textColor="@color/text_faint"
                     android:textSize="11sp" />

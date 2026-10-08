@@ -25,41 +25,84 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Generate release signing key
+        run: |
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/release.keystore" \
+            -alias videolive \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass videolive123 -keypass videolive123 \
+            -dname "CN=Video Live, OU=Dev, O=VideoLive, L=Dhaka, C=BD"
+
       - name: Build APK
+        env:
+          RELEASE_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          RELEASE_KEYSTORE_PASSWORD: videolive123
+          RELEASE_KEY_ALIAS: videolive
+          RELEASE_KEY_PASSWORD: videolive123
         run: |
           set +e
-          gradle :app:assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
+          gradle :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
           rc=${PIPESTATUS[0]}
           if [ $rc -ne 0 ]; then
             echo "### Build failure log" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             tail -n 120 build.log >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            grep -E "^e: |> Task .*FAILED|error:|FAILURE:|Caused by:|What went wrong|Could not|\* What|\* Try" build.log \
-              | sort -u | head -30 | sed 's/^/::error::/'
+            grep -E "^e: |> Task .*FAILED|FAILURE:|Caused by:|What went wrong|Could not" build.log \
+              | head -30 | sed 's/^/::error::/'
             exit $rc
           fi
 
-      - name: Prepare artifact
+      - name: Prepare artifacts
         run: |
           mkdir -p out
           cp app/build/outputs/apk/debug/app-debug.apk out/VideoLive.apk
-          sha256sum out/VideoLive.apk
+          cp app/build/outputs/apk/release/app-release.apk out/VideoLive-release.apk
+          sha256sum out/*.apk
 
-      - name: Upload APK
+      - name: Verify FFmpeg native libraries inside APK
+        run: |
+          mkdir -p apkcheck && cd apkcheck
+          unzip -q ../out/VideoLive-release.apk 'lib/*'
+          echo "### Native libraries packaged in the APK" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          find lib -name '*.so' | sort >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Native libraries in APK:"
+          find lib -name '*.so' | sort
+          missing=0
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            if ls lib/$abi/*.so >/dev/null 2>&1; then
+              echo "::notice::ABI $abi packaged ($(ls lib/$abi/*.so | wc -l) libs)"
+            else
+              echo "::error::ABI $abi MISSING from APK"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: VideoLive-apk
-          path: out/VideoLive.apk
+          path: |
+            out/VideoLive.apk
+            out/VideoLive-release.apk
           if-no-files-found: error
 
-      - name: Publish APK to Releases (direct .apk download)
+      - name: Publish APKs to Releases (direct .apk downloads)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
           gh release delete apk-latest --yes --cleanup-tag 2>/dev/null || true
-          gh release create apk-latest out/VideoLive.apk \
+          gh release create apk-latest out/VideoLive-release.apk out/VideoLive.apk \
             --title "Video Live APK (latest build)" \
-            --notes "Auto-published APK from branch ${GITHUB_REF_NAME} @ ${GITHUB_SHA}. Download **VideoLive.apk** (Assets below) and install it directly." \
+            --notes "Auto-published from branch ${GITHUB_REF_NAME} @ ${GITHUB_SHA}.
+
+          - **VideoLive-release.apk** — signed RELEASE build (recommended).
+          - **VideoLive.apk** — debug-signed build.
+
+          If you installed a previous build with a different signature, uninstall it first." \
             --latest

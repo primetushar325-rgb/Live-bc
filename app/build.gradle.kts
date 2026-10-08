@@ -52,10 +52,22 @@ android {
         // Kept at 34 on purpose: Android 15 (target 35) imposes a 6-hour limit on
         // dataSync foreground services, which would kill long live streams.
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
         // No abiFilters on purpose: the FFmpegKit AAR ships armeabi-v7a,
         // arm64-v8a, x86 and x86_64, so one universal APK runs on every device.
+    }
+
+    signingConfigs {
+        // Release signing material is provided by CI via environment variables.
+        if (System.getenv("RELEASE_KEYSTORE_FILE") != null) {
+            create("release") {
+                storeFile = file(System.getenv("RELEASE_KEYSTORE_FILE"))
+                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: ""
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: ""
+            }
+        }
     }
 
     buildTypes {
@@ -68,6 +80,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = if (signingConfigs.findByName("release") != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 
@@ -82,6 +99,10 @@ android {
 
     packaging {
         resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
+        // Extract native libraries at install time (extractNativeLibs=true).
+        // Maximum compatibility with older ROMs that cannot load unpacked .so
+        // files straight from the APK.
+        jniLibs.useLegacyPackaging = true
     }
 }
 
