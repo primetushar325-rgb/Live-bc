@@ -67,19 +67,20 @@ object VideoLoader {
         -1L
     }
 
-    private fun copyToCache(context: Context, uri: Uri, name: String): File? = try {
-        val dir = File(context.cacheDir, "videos").apply { mkdirs() }
-        // Clear previous cache copies so we never accumulate huge files.
-        dir.listFiles()?.forEach { if (it.name != name) it.delete() }
-        val target = File(dir, name)
-        if (!target.exists() || target.length() == 0L) {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                target.outputStream().use { out -> input.copyTo(out) }
-            } ?: return null
+    private fun copyToCache(context: Context, uri: Uri, name: String): File? {
+        try {
+            val dir = File(context.cacheDir, "videos").apply { mkdirs() }
+            // Clear previous cache copies so we never accumulate huge files.
+            dir.listFiles()?.forEach { if (it.name != name) it.delete() }
+            val target = File(dir, name)
+            if (!target.exists() || target.length() == 0L) {
+                val input = context.contentResolver.openInputStream(uri) ?: return null
+                input.use { i -> target.outputStream().use { out -> i.copyTo(out) } }
+            }
+            return target
+        } catch (t: Throwable) {
+            LogStore.event("Cache copy failed: ${t.javaClass.simpleName}")
+            return null
         }
-        target
-    } catch (t: Throwable) {
-        LogStore.event("Cache copy failed: ${t.javaClass.simpleName}")
-        null
     }
 }

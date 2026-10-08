@@ -10,7 +10,8 @@ import com.videolive.app.model.VideoInfo
  */
 object MediaProbe {
 
-    fun probe(source: InputSource): VideoInfo? = try {
+    fun probe(source: InputSource): VideoInfo? {
+        return try {
         val session = FFprobeKit.getMediaInformation(source.ffmpegInput)
         val info = session.mediaInformation
         if (info == null) {
@@ -61,9 +62,10 @@ object MediaProbe {
                 audioCodec = audioCodec
             )
         }
-    } catch (t: Throwable) {
-        LogStore.event("Probe error: ${t.javaClass.simpleName}")
-        null
+        } catch (t: Throwable) {
+            LogStore.event("Probe error: ${t.javaClass.simpleName}")
+            null
+        }
     }
 
     private fun parseFps(raw: String?): Int {

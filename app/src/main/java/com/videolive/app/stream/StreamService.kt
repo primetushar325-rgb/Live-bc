@@ -31,6 +31,7 @@ import com.videolive.app.ffmpeg.RunResult
 import com.videolive.app.media.VideoLoader
 import com.videolive.app.model.StreamConfig
 import com.videolive.app.util.Net
+import kotlin.coroutines.coroutineContext
 import kotlin.math.min
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -347,7 +348,7 @@ class StreamService : Service() {
     }
 
     private suspend fun watchdogLoop() {
-        while (isActive) {
+        while (coroutineContext.isActive) {
             delay(5000)
             val idleMs = System.currentTimeMillis() - lastProgressAt
             if (idleMs > WATCHDOG_STALL_MS && !stopRequested) {
