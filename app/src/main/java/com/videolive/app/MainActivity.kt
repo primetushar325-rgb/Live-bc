@@ -163,6 +163,13 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             FFmpegRuntime.verify(this@MainActivity)
         }
+        // Clean up leftover video cache files from crashed/killed sessions.
+        // Never touches an in-progress stream.
+        lifecycleScope.launch(Dispatchers.IO) {
+            if (!StreamService.isStreaming) {
+                com.videolive.app.media.VideoLoader.purgeStaleCache(this@MainActivity)
+            }
+        }
     }
 
     override fun onResume() {
@@ -365,12 +372,22 @@ class MainActivity : AppCompatActivity() {
             }
             renderQuickCard(inspection)
 
-            // Phase 2 — build the FFmpeg input bridge (zero-copy SAF if it is
-            // verified readable, otherwise a buffered temporary cache copy).
-            previewStatus.text = "Preparing streaming input..."
+            // Phase 2 — byte-level bridge: complete copy of the video into the
+            // private FFmpeg cache + real FFprobe verification of that file.
+            previewStatus.text = "Preparing video..."
             val loaded = try {
                 withContext(Dispatchers.IO) {
-                    VideoLoader.prepareForFFmpeg(this@MainActivity, uri, inspection)
+                    VideoLoader.prepareForFFmpeg(this@MainActivity, uri, inspection) { copied, total ->
+                        val text = if (total > 0) {
+                            "Copying video ${((copied * 100) / total).toInt()}% " +
+                                "(${Texts.formatSize(copied)} / ${Texts.formatSize(total)})"
+                        } else {
+                            "Copying video ${Texts.formatSize(copied)}"
+                        }
+                        runOnUiThread {
+                            if (VideoRepository.current == null) previewStatus.text = text
+                        }
+                    }
                 }
             } catch (e: VideoInputException) {
                 showPickError(e.message ?: "Unable to read this video.")

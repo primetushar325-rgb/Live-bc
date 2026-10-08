@@ -2,10 +2,11 @@ package com.videolive.app.media
 
 import android.content.Context
 import android.net.Uri
-import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.videolive.app.ffmpeg.LogStore
 import com.videolive.app.model.VideoInfo
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.FileOutputStream
 
 /**
  * Specific, user-facing failure reasons for the video input pipeline.
@@ -23,22 +24,32 @@ data class LoadedVideo(
 )
 
 /**
- * Turns an Android content:// Uri (ACTION_OPEN_DOCUMENT) into a readable input
- * for FFmpeg. The Uri is NEVER treated as a filesystem path.
+ * Turns an Android content:// Uri (ACTION_OPEN_DOCUMENT) into a REAL, readable
+ * file input for FFmpeg.
  *
- * Pipeline:
+ * History: a "SAF zero-copy" input (`saf:<name>`) was tried, but FFmpeg cannot
+ * reliably read that pseudo path — it produced "moov atom not found" /
+ * "Invalid data found when processing input". ContentResolver access is NOT
+ * FFmpeg access, so that path was removed.
+ *
+ * Pipeline now (byte-level, proven on device):
  *  1. [inspect] — open the Uri via ContentResolver, read name/size/MIME, pull
  *     platform metadata with MediaMetadataRetriever (works directly on the Uri).
- *     This is fast and powers the immediate UI (thumbnail, name, duration, ...).
- *  2. [prepareForFFmpeg] — build the FFmpeg input bridge:
- *       a) Zero-copy: FFmpegKit SAF protocol, but only accepted after FFprobe
- *          verified it can actually decode through it.
- *       b) Reliable fallback: buffered streaming copy from
- *          ContentResolver.openInputStream(uri) into cacheDir (large-file safe,
- *          never loads the file into RAM). The copy is temporary and is deleted
- *          after streaming stops or when a new video is chosen.
+ *     Fast; powers the immediate UI (thumbnail, name, duration, ...).
+ *  2. [prepareForFFmpeg] — buffered streaming copy of the ACTUAL BYTES from
+ *     ContentResolver.openInputStream(uri) into an app-private cache file
+ *     (1 MB buffer — never loads the video into RAM, works for files far
+ *     larger than RAM). After the copy:
+ *       - file exists, non-empty, byte count matches the source
+ *       - a real FFprobe run against the cache file must succeed
+ *     Only then is the cache path handed to FFmpeg as `-i <real file>`.
+ *  The cache file stays in place for the whole FFmpeg session and is deleted
+ *     after streaming stops (or on next app start via [purgeStaleCache]).
  */
 object VideoLoader {
+
+    private const val CACHE_DIR = "videos"
+    private const val BUFFER_SIZE = 1024 * 1024 // 1 MB — spec: never copy into RAM whole
 
     data class Inspection(
         val displayName: String,
@@ -96,43 +107,31 @@ object VideoLoader {
             )
         }
 
+        LogStore.event("Android content URI accessible")
         return Inspection(displayName, check.sizeBytes, mimeType, platformInfo)
     }
 
     /**
-     * Builds and verifies the FFmpeg input for the Uri. Uses zero-copy SAF when
-     * it survives FFprobe verification; otherwise the temporary cache bridge.
+     * Builds the FFmpeg input: a complete byte-level cache copy of the video
+     * plus a real FFprobe verification of that file. Streaming MUST NOT start
+     * before this returns — the copy is finished and verified at that point.
+     *
+     * [onProgress] (called on the copy thread) receives (copiedBytes, totalBytes);
+     * totalBytes is -1 when the provider did not report a size.
      */
     fun prepareForFFmpeg(
         context: Context,
         uri: Uri,
-        inspection: Inspection
+        inspection: Inspection,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
     ): LoadedVideo {
-        // 1) Zero-copy attempt via FFmpegKit SAF protocol.
-        val safSource = try {
-            val param = FFmpegKitConfig.getSafParameterForRead(context, uri)
-            if (param.isNullOrBlank()) null
-            else InputSource.SafSource(param, inspection.displayName, inspection.sizeBytes)
-        } catch (t: Throwable) {
-            LogStore.event("SAF registration failed: ${t.javaClass.simpleName}")
-            null
-        }
-
-        if (safSource != null) {
-            val probed = MediaProbe.probe(safSource)
-            if (probed != null) {
-                LogStore.event("FFmpeg input: SAF zero-copy (${safSource.ffmpegInput}) — accessible")
-                return LoadedVideo(safSource, probed.withSizeFallback(inspection.sizeBytes))
-            }
-            LogStore.event("SAF input failed FFprobe verification — falling back to cache bridge")
-        }
-
-        // 2) Cache-file bridge (buffered streaming copy, large-file safe).
-        val copy = copyToCache(context, uri, inspection.displayName)
+        val copy = copyToCache(context, uri, inspection.displayName, inspection.sizeBytes, onProgress)
             ?: throw VideoInputException(
                 VideoInputException.Kind.UNREADABLE,
                 "Unable to read this video."
             )
+        LogStore.event("FFmpeg cache ready: ${copy.length()} bytes (${copy.length() / (1024 * 1024)} MB)")
+
         val fileSource = InputSource.FileSource(
             path = copy.absolutePath,
             displayName = inspection.displayName,
@@ -140,23 +139,37 @@ object VideoLoader {
             deletable = true
         )
 
+        // Real probe test against the ACTUAL cached file — never stream without it.
+        LogStore.event("FFmpeg probe started (cache file)")
         val probed = MediaProbe.probe(fileSource)
-        if (probed != null) {
-            LogStore.event("FFmpeg input: cache bridge ${copy.absolutePath} — accessible")
-            return LoadedVideo(fileSource, probed)
+        if (probed == null) {
+            try {
+                copy.delete()
+            } catch (_: Throwable) {
+            }
+            LogStore.event("Video preparation failed: FFprobe could not decode the cached file")
+            throw VideoInputException(
+                VideoInputException.Kind.UNDECODABLE,
+                "Video preparation failed."
+            )
         }
-
-        // FFprobe could not read even the local copy, but the platform decoded
-        // the Uri in inspect(): trust the platform metadata and stream from the
-        // copy — FFmpeg may still handle containers FFprobe's quick scan rejects.
-        LogStore.event("FFprobe failed on cache copy; using platform metadata")
-        return LoadedVideo(fileSource, inspection.platformInfo!!.withSizeFallback(copy.length()))
+        LogStore.event(
+            "FFmpeg probe successful: ${probed.width}x${probed.height} @ ${probed.fps} fps, " +
+                "${probed.durationMs} ms, video=${probed.videoCodec.ifEmpty { "?" }}, " +
+                "audio=${if (probed.hasAudio) probed.audioCodec.ifEmpty { "present" } else "none"}"
+        )
+        LogStore.event("FFmpeg input prepared: local cache file")
+        return LoadedVideo(fileSource, probed.withSizeFallback(copy.length()))
     }
 
     /** One-shot helper: inspect + prepare. */
-    fun load(context: Context, uri: Uri): LoadedVideo {
+    fun load(
+        context: Context,
+        uri: Uri,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): LoadedVideo {
         val inspection = inspect(context, uri)
-        return prepareForFFmpeg(context, uri, inspection)
+        return prepareForFFmpeg(context, uri, inspection, onProgress)
     }
 
     /** Deletes any temporary bridge copy (called after streaming stops). */
@@ -172,26 +185,100 @@ object VideoLoader {
         }
     }
 
-    private fun copyToCache(context: Context, uri: Uri, displayName: String): File? {
+    /**
+     * Removes leftover cache files from crashed/killed sessions. Call at app
+     * startup — but never while a stream is running.
+     */
+    fun purgeStaleCache(context: Context) {
+        try {
+            val dir = File(context.cacheDir, CACHE_DIR)
+            val files = dir.listFiles()
+            if (files != null && files.isNotEmpty()) {
+                files.forEach { it.delete() }
+                LogStore.event("Stale cache files removed: ${files.size}")
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun cacheDir(context: Context): File =
+        File(context.cacheDir, CACHE_DIR).apply { mkdirs() }
+
+    /**
+     * Buffered byte-for-byte copy from the content Uri into the private cache.
+     * Returns the cache file only when the copy is COMPLETE and verified.
+     */
+    private fun copyToCache(
+        context: Context,
+        uri: Uri,
+        displayName: String,
+        expectedBytes: Long,
+        onProgress: ((Long, Long) -> Unit)?
+    ): File? {
         return try {
-            val dir = File(context.cacheDir, "videos").apply { mkdirs() }
+            val dir = cacheDir(context)
             // A new selection replaces any previous bridge copy.
             dir.listFiles()?.forEach { it.delete() }
-            val safeName = displayName.replace(Regex("[^a-zA-Z0-9.\\-_ ]"), "_")
-            val target = File(dir, safeName)
-            LogStore.event("Copying video to temporary bridge file (buffered stream)...")
-            val input = context.contentResolver.openInputStream(uri)
-                ?: return null
+
+            val safeName = displayName.replace(Regex("[^a-zA-Z0-9.\\-_ ]"), "_").take(60)
+            val target = File(dir, "stream_input_${System.currentTimeMillis()}_$safeName")
+            LogStore.event("Copying video to FFmpeg cache...")
+            LogStore.event("Cache file: ${target.absolutePath}")
+
+            var copied = 0L
+            var lastProgressAt = 0L
+            var lastLoggedPct = 0
+            val input = context.contentResolver.openInputStream(uri) ?: run {
+                LogStore.event("ContentResolver refused to open the URI")
+                return null
+            }
             input.use { rawIn ->
-                java.io.BufferedInputStream(rawIn, 256 * 1024).use { buffered ->
-                    java.io.FileOutputStream(target).use { out ->
-                        buffered.copyTo(out, 256 * 1024)
+                BufferedInputStream(rawIn, BUFFER_SIZE).use { src ->
+                    FileOutputStream(target).use { dest ->
+                        val buffer = ByteArray(BUFFER_SIZE)
+                        while (true) {
+                            val read = src.read(buffer)
+                            if (read <= 0) break
+                            dest.write(buffer, 0, read)
+                            copied += read
+                            if (onProgress != null && copied - lastProgressAt >= 2_000_000L) {
+                                lastProgressAt = copied
+                                try {
+                                    onProgress(copied, expectedBytes)
+                                } catch (_: Throwable) {
+                                }
+                            }
+                            if (expectedBytes > 0) {
+                                val pct = ((copied * 100) / expectedBytes).toInt()
+                                if (pct >= lastLoggedPct + 25 && pct <= 100) {
+                                    lastLoggedPct = pct
+                                    LogStore.event("Copying video to FFmpeg cache... $pct%")
+                                }
+                            }
+                        }
+                        dest.flush()
+                        dest.fd.sync()
                     }
                 }
             }
+
+            // Completeness verification before FFmpeg ever sees this file.
+            if (!target.exists() || target.length() <= 0) {
+                LogStore.event("Cache copy failed: destination file missing or empty")
+                target.delete()
+                return null
+            }
+            if (expectedBytes > 0 && copied != expectedBytes) {
+                LogStore.event(
+                    "Cache copy INCOMPLETE: expected $expectedBytes bytes, got $copied — aborting"
+                )
+                target.delete()
+                return null
+            }
+            LogStore.event("Cache copy completed successfully: $copied bytes")
             target
         } catch (t: Throwable) {
-            LogStore.event("Cache bridge copy failed: ${t.javaClass.simpleName}")
+            LogStore.event("Cache bridge copy failed: ${t.javaClass.simpleName}: ${t.message}")
             null
         }
     }
