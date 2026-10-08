@@ -62,6 +62,10 @@ class MainActivity : AppCompatActivity() {
     private var suppressMicListener = false
     private var bitrateSelectionRestored = false
 
+    /** Guards START LIVE: one preparation/stream start at a time. */
+    @Volatile
+    private var startInProgress = false
+
     private lateinit var batteryWarning: TextView
     private lateinit var liveBanner: TextView
     private lateinit var previewFrame: FrameLayout
@@ -379,19 +383,19 @@ class MainActivity : AppCompatActivity() {
 
             // Phase 2 — byte-level bridge: complete copy of the video into the
             // private FFmpeg cache + real FFprobe verification of that file.
+            // Single-flight: if a preparation is already running (e.g. START
+            // LIVE tapped during selection), it is reused, never duplicated.
             previewStatus.text = "Preparing video..."
             val loaded = try {
-                withContext(Dispatchers.IO) {
-                    VideoLoader.prepareForFFmpeg(this@MainActivity, uri, inspection) { copied, total ->
-                        val text = if (total > 0) {
-                            "Copying video ${((copied * 100) / total).toInt()}% " +
-                                "(${Texts.formatSize(copied)} / ${Texts.formatSize(total)})"
-                        } else {
-                            "Copying video ${Texts.formatSize(copied)}"
-                        }
-                        runOnUiThread {
-                            if (VideoRepository.current == null) previewStatus.text = text
-                        }
+                VideoLoader.prepareOnce(this@MainActivity, uri, inspection) { copied, total ->
+                    val text = if (total > 0) {
+                        "Copying video ${((copied * 100) / total).toInt()}% " +
+                            "(${Texts.formatSize(copied)} / ${Texts.formatSize(total)})"
+                    } else {
+                        "Copying video ${Texts.formatSize(copied)}"
+                    }
+                    runOnUiThread {
+                        if (VideoRepository.current == null) previewStatus.text = text
                     }
                 }
             } catch (e: VideoInputException) {
@@ -510,7 +514,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Idempotent START LIVE entry point. Rapid taps cannot create duplicate
+     * sessions: while a start is being prepared or a stream is running, every
+     * additional tap is rejected.
+     */
     private fun validateAndStart() {
+        if (StreamService.isStreaming) {
+            toast("A stream is already running.")
+            return
+        }
+        if (startInProgress) {
+            toast("Please wait — the previous START is still being prepared.")
+            return
+        }
         val loaded = VideoRepository.current
         if (loaded == null) {
             // The temporary bridge copy may have been deleted after the last
@@ -521,59 +538,68 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             toast("Preparing video for streaming...")
+            startInProgress = true
+            com.videolive.app.ffmpeg.LogStore.startSession()
             val startButton = findViewById<TextView>(R.id.btnStartLive)
             startButton.isEnabled = false
             lifecycleScope.launch {
                 val prepared = try {
-                    withContext(Dispatchers.IO) {
-                        VideoLoader.load(this@MainActivity, Uri.parse(uriString))
-                    }
+                    VideoLoader.loadOnce(this@MainActivity, Uri.parse(uriString))
                 } catch (e: VideoInputException) {
                     toast(e.message ?: "Unable to read this video.")
                     startButton.isEnabled = true
+                    startInProgress = false
                     return@launch
                 } catch (t: Throwable) {
                     toast("Unable to read this video.")
                     startButton.isEnabled = true
+                    startInProgress = false
                     return@launch
                 }
-                VideoRepository.current = prepared
                 startButton.isEnabled = true
                 startStreamWith(prepared)
             }
             return
         }
+        startInProgress = true
+        com.videolive.app.ffmpeg.LogStore.startSession()
         startStreamWith(loaded)
     }
 
     private fun startStreamWith(loaded: LoadedVideo) {
+        // Releases the START guard and re-enables the button on any abort path.
+        fun abort(message: String) {
+            toast(message)
+            startInProgress = false
+        }
+
         if (!switchFullUrl.isChecked) {
             val server = etServerUrl.text.toString().trim()
             val key = etStreamKey.text.toString().trim()
             if (!FFmpegCommandBuilder.isValidRtmpUrl(server)) {
-                toast("Please enter a valid RTMP/RTMPS server URL.")
+                abort("Please enter a valid RTMP/RTMPS server URL.")
                 return
             }
             if (key.isEmpty()) {
-                toast("Please enter your YouTube Stream Key.")
+                abort("Please enter your YouTube Stream Key.")
                 return
             }
         } else {
             val full = etFullUrl.text.toString().trim()
             if (!FFmpegCommandBuilder.isValidRtmpUrl(full)) {
-                toast("Please enter a valid full RTMP/RTMPS URL.")
+                abort("Please enter a valid full RTMP/RTMPS URL.")
                 return
             }
         }
         if (!Net.isOnline(this)) {
-            toast("Network connection unavailable.")
+            abort("Network connection unavailable.")
             return
         }
         // Real FFmpeg runtime verification: native library present for this
         // device's ABI AND a successful `ffmpeg -version` execution test.
         val engine = FFmpegRuntime.verify(this)
         if (!engine.ready) {
-            toast(engine.userMessage + " Check Advanced Logs for the exact reason.")
+            abort(engine.userMessage + " Check Advanced Logs for the exact reason.")
             return
         }
 
@@ -582,7 +608,7 @@ class MainActivity : AppCompatActivity() {
         // against an unreachable destination.
         val probeUrl = currentDestinationForTest()
         if (probeUrl == null) {
-            toast("Please enter a valid RTMP/RTMPS destination.")
+            abort("Please enter a valid RTMP/RTMPS destination.")
             return
         }
         val startButton = findViewById<TextView>(R.id.btnStartLive)
@@ -592,6 +618,7 @@ class MainActivity : AppCompatActivity() {
             val result = withContext(Dispatchers.IO) { RtmpProbe.probe(probeUrl) }
             startButton.isEnabled = true
             if (!result.success) {
+                startInProgress = false
                 MaterialAlertDialogBuilder(this@MainActivity)
                     .setTitle("Destination test failed")
                     .setMessage(
@@ -608,6 +635,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun beginStreaming(loaded: LoadedVideo) {
+        if (StreamService.isStreaming) {
+            toast("A stream is already running.")
+            startInProgress = false
+            return
+        }
         // Persist everything the user just typed.
         settingsRepo.serverUrl = etServerUrl.text.toString().trim()
         settingsRepo.fullUrl = etFullUrl.text.toString().trim()
@@ -646,6 +678,9 @@ class MainActivity : AppCompatActivity() {
                 "(${if (loaded.source.isTemporaryCopy) "cache bridge" else "direct read"})"
         )
         StreamService.start(this, config)
+        // The service owns the session from here; its own isStreaming guard
+        // rejects any duplicate START.
+        startInProgress = false
         startActivity(Intent(this, LiveActivity::class.java))
     }
 

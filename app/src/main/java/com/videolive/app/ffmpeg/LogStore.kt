@@ -15,6 +15,17 @@ object LogStore {
     private val lines = ArrayDeque<String>()
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
 
+    /** Tags every pipeline event of the current START LIVE session. */
+    @Volatile
+    private var sessionTag: String = ""
+
+    /** Begins (or replaces) the session tag; returns it, e.g. "session=384". */
+    fun startSession(): String {
+        val tag = "session=" + (100 + kotlin.random.Random.nextInt(900))
+        sessionTag = tag
+        return tag
+    }
+
     @Synchronized
     fun append(rawLine: String) {
         val line = Sanitize.mask(rawLine).trimEnd()
@@ -31,7 +42,9 @@ object LogStore {
     @Synchronized
     fun event(message: String) {
         val stamp = timeFormat.format(Date())
-        lines.addLast("[$stamp] ${Sanitize.mask(message)}")
+        val tag = sessionTag
+        val prefix = if (tag.isNotEmpty()) "[$stamp $tag] " else "[$stamp] "
+        lines.addLast(prefix + Sanitize.mask(message))
         if (lines.size > CAPACITY) lines.removeFirst()
     }
 

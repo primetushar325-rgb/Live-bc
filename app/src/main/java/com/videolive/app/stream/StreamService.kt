@@ -217,12 +217,13 @@ class StreamService : Service() {
             // Sanitize masks the path (stream key) of rtmp(s) URLs.
             LogStore.event("RTMP destination validated: $destination")
 
+            // loadOnce is single-flight: even if something else is preparing
+            // the same video right now, this waits and reuses that result —
+            // it can never start a second cache copy.
             val loaded: LoadedVideo =
                 VideoRepository.current?.takeIf { it.source.displayName == config.videoName }
                     ?: try {
-                        withContext(Dispatchers.IO) {
-                            VideoLoader.load(this@StreamService, Uri.parse(config.videoUri))
-                        }
+                        VideoLoader.loadOnce(this@StreamService, Uri.parse(config.videoUri))
                     } catch (e: com.videolive.app.media.VideoInputException) {
                         LogStore.event("Startup aborted: input preparation failed")
                         failNow(e.message ?: "Unable to read this video.")

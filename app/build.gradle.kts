@@ -52,8 +52,8 @@ android {
         // Kept at 34 on purpose: Android 15 (target 35) imposes a 6-hour limit on
         // dataSync foreground services, which would kill long live streams.
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.7"
+        versionCode = 9
+        versionName = "1.8"
         // No abiFilters on purpose: the FFmpegKit AAR ships armeabi-v7a,
         // arm64-v8a, x86 and x86_64, so one universal APK runs on every device.
     }

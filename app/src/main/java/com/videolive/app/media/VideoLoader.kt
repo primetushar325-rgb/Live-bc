@@ -2,11 +2,16 @@ package com.videolive.app.media
 
 import android.content.Context
 import android.net.Uri
+import com.videolive.app.data.VideoRepository
 import com.videolive.app.ffmpeg.LogStore
 import com.videolive.app.model.VideoInfo
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Specific, user-facing failure reasons for the video input pipeline.
@@ -50,6 +55,47 @@ object VideoLoader {
 
     private const val CACHE_DIR = "videos"
     private const val BUFFER_SIZE = 1024 * 1024 // 1 MB — spec: never copy into RAM whole
+
+    /**
+     * Single-flight guard for input preparation. No matter how many callers
+     * (selection flow, START LIVE rebuild, service reload) ask at the same
+     * time: exactly ONE cache copy ever runs; every other caller waits and
+     * then reuses the finished result.
+     */
+    private val prepareMutex = Mutex()
+
+    /**
+     * Prepares the FFmpeg input once. If a preparation is already running,
+     * waits for it and returns its result; if a video is already prepared,
+     * returns it without copying again.
+     */
+    suspend fun prepareOnce(
+        context: Context,
+        uri: Uri,
+        inspection: Inspection,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): LoadedVideo = prepareMutex.withLock {
+        VideoRepository.current?.let { return@withLock it }
+        val loaded = withContext(Dispatchers.IO) {
+            prepareForFFmpeg(context.applicationContext, uri, inspection, onProgress)
+        }
+        VideoRepository.current = loaded
+        loaded
+    }
+
+    /** One-shot single-flight variant: inspect + prepare exactly once. */
+    suspend fun loadOnce(
+        context: Context,
+        uri: Uri,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): LoadedVideo = prepareMutex.withLock {
+        VideoRepository.current?.let { return@withLock it }
+        val loaded = withContext(Dispatchers.IO) {
+            load(context.applicationContext, uri, onProgress)
+        }
+        VideoRepository.current = loaded
+        loaded
+    }
 
     data class Inspection(
         val displayName: String,
