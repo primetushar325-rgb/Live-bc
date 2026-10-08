@@ -610,35 +610,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Real destination reachability test (DNS -> TCP -> TLS -> RTMP
-        // handshake) BEFORE the encoder starts. The encoder must not launch
-        // against an unreachable destination.
-        val probeUrl = currentDestinationForTest()
-        if (probeUrl == null) {
-            abort("Please enter a valid RTMP/RTMPS destination.")
-            return
-        }
-        val startButton = findViewById<TextView>(R.id.btnStartLive)
-        startButton.isEnabled = false
-        val loadedRef = loaded
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) { RtmpProbe.probe(probeUrl) }
-            startButton.isEnabled = true
-            if (!result.success) {
-                startInProgress = false
-                MaterialAlertDialogBuilder(this@MainActivity)
-                    .setTitle("Destination test failed")
-                    .setMessage(
-                        "The streaming destination could not be reached — the " +
-                            "encoder was NOT started.\n\n" + result.report() +
-                            "\n\nFix the failing step, then try again."
-                    )
-                    .setPositiveButton("OK", null)
-                    .show()
-                return@launch
-            }
-            beginStreaming(loadedRef)
-        }
+        // Direct start — identical to the last known working pipeline.
+        // (The optional TEST YOUTUBE CONNECTION button remains available for
+        // diagnostics, but it never blocks or gates streaming.)
+        beginStreaming(loaded)
     }
 
     private fun beginStreaming(loaded: LoadedVideo) {
