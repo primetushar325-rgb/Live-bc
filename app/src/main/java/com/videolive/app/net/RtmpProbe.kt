@@ -111,8 +111,8 @@ object RtmpProbe {
             if (secure) {
                 t = System.currentTimeMillis()
                 try {
-                    val tls = SSLSocketFactory.getDefault()
-                        .createSocket(socket, host, port, true) as SSLSocket
+                    val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
+                    val tls = factory.createSocket(socket, host, port, true) as SSLSocket
                     tls.useClientMode = true
                     tls.startHandshake()
                     val session = tls.session
