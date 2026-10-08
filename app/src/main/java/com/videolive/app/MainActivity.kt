@@ -795,6 +795,12 @@ class MainActivity : AppCompatActivity() {
         val usePlaylist = settingsRepo.playlistEnabled &&
             playlist != null && playlist.items.size >= 2
 
+        if (!usePlaylist && loaded == null) {
+            toast("Please select a video.")
+            startInProgress = false
+            return
+        }
+
         val config = if (usePlaylist && playlist != null) {
             StreamConfig(
                 videoUri = playlist.items.first().uri,
@@ -821,11 +827,6 @@ class MainActivity : AppCompatActivity() {
                 micVolumePct = settingsRepo.micVolumePct
             )
         } else {
-            if (loaded == null) {
-                toast("Please select a video.")
-                startInProgress = false
-                return
-            }
             StreamConfig(
                 videoUri = settingsRepo.videoUri.orEmpty(),
                 videoName = loaded.source.displayName,
@@ -854,8 +855,8 @@ class MainActivity : AppCompatActivity() {
                 "Playlist session: ${config.items.size} items, mode=${config.loopMode}, " +
                     "policy=${config.stopPolicy}"
             } else {
-                "Source URI validated: ${loaded.source.displayName} " +
-                    "(${if (loaded.source.isTemporaryCopy) "cache bridge" else "direct read"})"
+                "Source URI validated: ${loaded?.source?.displayName} " +
+                    "(${if (loaded?.source?.isTemporaryCopy == true) "cache bridge" else "direct read"})"
             }
         )
         StreamService.start(this, config)

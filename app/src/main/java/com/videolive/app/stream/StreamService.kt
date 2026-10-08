@@ -359,7 +359,7 @@ class StreamService : Service() {
                 else loadedList.indices.toList()
             if (playlistMode) {
                 playlistDurations = LongArray(playOrder.size) { loadedList[playOrder[it]].info.durationMs }
-                playlistNames = playOrder.map { loadedList[it].info.displayName }.toTypedArray()
+                playlistNames = playOrder.map { loadedList[it].source.displayName }.toTypedArray()
                 totalPlaylistMs = playlistDurations.sum()
                 LogStore.event(
                     "Playlist total duration: ${totalPlaylistMs / 60000} min, " +
