@@ -1,11 +1,16 @@
 package com.videolive.app
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.ImageButton
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.videolive.app.ffmpeg.LogStore
 
@@ -36,6 +41,36 @@ class LogsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnClear).setOnClickListener {
             LogStore.clear()
             update()
+        }
+        findViewById<TextView>(R.id.btnCopyLogs).setOnClickListener {
+            copyLogsToClipboard()
+        }
+        findViewById<TextView>(R.id.btnShareLogs).setOnClickListener {
+            shareLogs()
+        }
+    }
+
+    /** Copies the full sanitized log to the system clipboard. */
+    private fun copyLogsToClipboard() {
+        try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("VideoLive Advanced Logs", LogStore.snapshot()))
+            Toast.makeText(this, R.string.logs_copied, Toast.LENGTH_SHORT).show()
+        } catch (t: Throwable) {
+            Toast.makeText(this, "Copy failed: ${t.javaClass.simpleName}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Opens the Android share sheet so the log can be sent via any app. */
+    private fun shareLogs() {
+        try {
+            val send = Intent(Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_SUBJECT, "VideoLive Advanced Logs")
+                .putExtra(Intent.EXTRA_TEXT, LogStore.snapshot())
+            startActivity(Intent.createChooser(send, "Send logs via"))
+        } catch (t: Throwable) {
+            Toast.makeText(this, "Share failed: ${t.javaClass.simpleName}", Toast.LENGTH_SHORT).show()
         }
     }
 
