@@ -1,6 +1,45 @@
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// ---------------------------------------------------------------------------
+// FFmpegKit AAR (community rebuild of the official full-gpl 6.0-2 package,
+// verified: com.arthenica.ffmpegkit classes, all 4 ABIs incl. armeabi-v7a).
+// The original artifacts were removed from Maven Central in April 2025, so the
+// AAR is fetched from a pinned GitHub release and verified by SHA-256.
+// ---------------------------------------------------------------------------
+val ffmpegKitAarUrl =
+    "https://github.com/NooruddinLakhani/ffmpeg-kit-full-gpl/releases/download/v1.0.0/ffmpeg-kit-full-gpl.aar"
+val ffmpegKitAarSha256 =
+    "87e37384ef5f8755d816212890775ba94d493a70d2eff4615a8d59780ac1fc5e"
+val ffmpegKitAar = layout.projectDirectory.file("libs/ffmpeg-kit-full-gpl.aar").asFile
+
+val downloadFfmpegKitAar = tasks.register("downloadFfmpegKitAar") {
+    outputs.file(ffmpegKitAar)
+    onlyIf { !ffmpegKitAar.exists() }
+    doLast {
+        ffmpegKitAar.parentFile.mkdirs()
+        logger.lifecycle("Downloading FFmpegKit AAR (56 MB)...")
+        URI(ffmpegKitAarUrl).toURL().openStream().use { input ->
+            ffmpegKitAar.outputStream().use { output -> input.copyTo(output) }
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        val sha = ffmpegKitAar.inputStream().use { stream ->
+            digest.digest(stream.readBytes()).joinToString("") { "%02x".format(it) }
+        }
+        if (sha != ffmpegKitAarSha256) {
+            ffmpegKitAar.delete()
+            throw GradleException(
+                "SHA-256 mismatch for ffmpeg-kit-full-gpl.aar (got $sha). " +
+                    "Refusing to build with an unverified binary."
+            )
+        }
+        logger.lifecycle("FFmpegKit AAR verified: $sha")
+    }
 }
 
 android {
@@ -13,12 +52,10 @@ android {
         // Kept at 34 on purpose: Android 15 (target 35) imposes a 6-hour limit on
         // dataSync foreground services, which would kill long live streams.
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
-        // The FFmpegKit AARs ship arm64-v8a and x86_64 native libraries.
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
-        }
+        versionCode = 2
+        versionName = "1.1"
+        // No abiFilters on purpose: the FFmpegKit AAR ships armeabi-v7a,
+        // arm64-v8a, x86 and x86_64, so one universal APK runs on every device.
     }
 
     buildTypes {
@@ -48,7 +85,16 @@ android {
     }
 }
 
+afterEvaluate {
+    tasks.matching { it.name == "preBuild" }.configureEach {
+        dependsOn(downloadFfmpegKitAar)
+    }
+}
+
 dependencies {
+    // Local, SHA-256-pinned FFmpegKit AAR (all ABIs).
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
@@ -57,9 +103,4 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // Encrypted local storage for the stream key (Android Keystore backed).
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    // Real in-process FFmpeg (FFmpegKit). The maintained continuation publishes under
-    // dev.ffmpegkit-maintained (the original com.arthenica artifacts were removed from
-    // Maven Central in April 2025). Same com.arthenica.ffmpegkit API.
-    // "https-gpl" = TLS (RTMPS to YouTube) + libx264 H.264 encoder (GPL variant).
-    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-https-gpl:6.0.3")
 }

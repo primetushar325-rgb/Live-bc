@@ -68,11 +68,13 @@ app/src/main/java/com/videolive/app/
 The streaming engine lives entirely in `StreamService` + `ffmpeg/*` — it is not coupled
 to any Activity, so the stream survives Activity destruction and backgrounding.
 
-**FFmpeg dependency:** `dev.ffmpegkit-maintained:ffmpeg-kit-https-gpl:6.0.3` — the
-maintained continuation of FFmpegKit (the original `com.arthenica` artifacts were removed
-from Maven Central in April 2025). Same `com.arthenica.ffmpegkit` API. The `-gpl` variant
-is required because it bundles the `libx264` H.264 encoder plus TLS for RTMPS. Note: this
-variant is GPL-3.0 licensed.
+**FFmpeg dependency:** FFmpegKit `full-gpl` 6.0-2 (GPL variant — bundles `libx264`
+for H.264 plus TLS for RTMPS). The official `com.arthenica` artifacts were removed from
+Maven Central in April 2025, so Gradle fetches a pinned community rebuild of that exact
+package from a GitHub release and **verifies it by SHA-256 before building**
+(`app/build.gradle.kts` → `downloadFfmpegKitAar`). This build ships **all 4 ABIs
+(armeabi-v7a, arm64-v8a, x86, x86_64)** — the universal APK installs on both 32-bit and
+64-bit phones. Requires Android 7.0 (API 24) or newer.
 
 ## Build
 
