@@ -34,6 +34,7 @@ class LiveActivity : AppCompatActivity() {
     private lateinit var txtYouTubeHint: TextView
     private lateinit var txtLoop: TextView
     private lateinit var txtNetwork: TextView
+    private lateinit var btnRetryNow: TextView
 
     private var errorHandled = false
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -54,6 +55,8 @@ class LiveActivity : AppCompatActivity() {
         txtYouTubeHint = findViewById(R.id.txtYouTubeHint)
         txtLoop = findViewById(R.id.txtLoop)
         txtNetwork = findViewById(R.id.txtNetwork)
+        btnRetryNow = findViewById(R.id.btnRetryNow)
+        btnRetryNow.setOnClickListener { StreamService.requestRetryNow() }
 
         findViewById<TextView>(R.id.btnStopLive).setOnClickListener { confirmStop() }
         findViewById<ImageButton>(R.id.btnLiveSettings).setOnClickListener {
@@ -136,6 +139,9 @@ class LiveActivity : AppCompatActivity() {
         txtYouTubeHint.visibility =
             if (state.phase == Phase.PUBLISHING || state.phase == Phase.STREAMING) View.VISIBLE
             else View.GONE
+
+        btnRetryNow.visibility =
+            if (state.phase == Phase.RECONNECTING) View.VISIBLE else View.GONE
 
         txtLoop.text = "Loop ${state.loopCount + 1} • item 1/1 (${state.videoName})"
         txtNetwork.text = if (state.networkOk) "OK" else "Poor / offline"

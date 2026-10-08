@@ -106,6 +106,23 @@ class StreamService : Service() {
         fun stop(context: Context) {
             context.startService(Intent(context, StreamService::class.java).setAction(ACTION_STOP))
         }
+
+        /** Skips the current reconnect backoff wait and retries immediately. */
+        fun requestRetryNow() {
+            LogStore.event("Retry Now requested by user")
+            retryNowFlag = true
+        }
+
+        @Volatile
+        private var retryNowFlag = false
+
+        internal fun consumeRetryNow(): Boolean {
+            val v = retryNowFlag
+            retryNowFlag = false
+            return v
+        }
+
+        internal fun retryNowPending(): Boolean = retryNowFlag
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -115,6 +132,7 @@ class StreamService : Service() {
     private var tickerJob: Job? = null
 
     @Volatile private var stopRequested = false
+    @Volatile private var retryNowRequested = false
     private var startedAt = 0L
     @Volatile private var lastProgressAt = System.currentTimeMillis()
 
@@ -278,6 +296,8 @@ class StreamService : Service() {
 
             var attempt = 0
             while (!stopRequested) {
+                // Retry Now is one-shot: clear it once a new attempt begins.
+                consumeRetryNow()
                 // Network gate: don't burn retries while the radio is simply down.
                 if (!Net.isOnline(this)) {
                     attempt++
@@ -419,15 +439,27 @@ class StreamService : Service() {
                         }
                         post { s ->
                             if (s.phase == Phase.STOPPING || s.phase == Phase.ERROR) s
-                            else s.copy(
-                                phase = Phase.STREAMING,
-                                statusText = "Sending video to YouTube...",
-                                liveFps = st.videoFps,
-                                liveBitrateKbps = st.bitrate.toInt(),
-                                speed = st.speed,
-                                loopCount = loops,
-                                networkOk = netOk
-                            )
+                            else {
+                                if (!netOk && s.networkOk) {
+                                    LogStore.event("Network condition: POOR — monitoring connection")
+                                }
+                                if (netOk && !s.networkOk) {
+                                    LogStore.event("Connection restored")
+                                }
+                                s.copy(
+                                    phase = Phase.STREAMING,
+                                    statusText = when {
+                                        !netOk -> "Network poor — monitoring..."
+                                        !s.networkOk -> "Connection restored"
+                                        else -> "Sending video to YouTube..."
+                                    },
+                                    liveFps = st.videoFps,
+                                    liveBitrateKbps = st.bitrate.toInt(),
+                                    speed = st.speed,
+                                    loopCount = loops,
+                                    networkOk = netOk
+                                )
+                            }
                         }
                         if (!liveNotified) {
                             liveNotified = true
@@ -602,10 +634,10 @@ class StreamService : Service() {
         return min((1L shl step) * 2000L, 30_000L)
     }
 
-    /** Backoff delay that exits promptly when STOP LIVE is pressed. */
+    /** Backoff delay that exits promptly when STOP LIVE or Retry Now is pressed. */
     private suspend fun stoppableDelay(ms: Long) {
         var left = ms
-        while (left > 0 && !stopRequested) {
+        while (left > 0 && !stopRequested && !Companion.retryNowPending()) {
             val step = minOf(500L, left)
             delay(step)
             left -= step

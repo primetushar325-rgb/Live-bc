@@ -76,5 +76,6 @@
     <string name="test_connection">TEST YOUTUBE CONNECTION</string>
     <string name="row_loop">Loop / item</string>
     <string name="row_network">Network</string>
+    <string name="retry_now">RETRY NOW</string>
     <string name="youtube_confirmation_hint">This app cannot see YouTube\'s broadcast state. While the encoder is sending video, open the YouTube Live Control Room (YouTube Studio → Go Live) — a preview of your stream should appear there. If your stream does not auto-start, press GO LIVE there. Only then is the broadcast public.</string>
 </resources>
