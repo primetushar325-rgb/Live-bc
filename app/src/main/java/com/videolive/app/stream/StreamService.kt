@@ -28,6 +28,7 @@ import com.videolive.app.ffmpeg.FFmpegCommandBuilder
 import com.videolive.app.ffmpeg.FFmpegManager
 import com.videolive.app.ffmpeg.LogStore
 import com.videolive.app.ffmpeg.RunResult
+import com.videolive.app.media.LoadedVideo
 import com.videolive.app.media.VideoLoader
 import com.videolive.app.model.StreamConfig
 import com.videolive.app.util.Net
@@ -179,21 +180,20 @@ class StreamService : Service() {
                 return
             }
 
-            var loaded = VideoRepository.current
-            if (loaded == null || loaded.source.displayName != config.videoName) {
-                loaded = try {
-                    withContext(Dispatchers.IO) {
-                        VideoLoader.load(this@StreamService, Uri.parse(config.videoUri))
+            val loaded: LoadedVideo =
+                VideoRepository.current?.takeIf { it.source.displayName == config.videoName }
+                    ?: try {
+                        withContext(Dispatchers.IO) {
+                            VideoLoader.load(this@StreamService, Uri.parse(config.videoUri))
+                        }
+                    } catch (e: com.videolive.app.media.VideoInputException) {
+                        failNow(e.message ?: "Unable to read this video.")
+                        return
+                    } catch (t: Throwable) {
+                        failNow("Unable to read this video.")
+                        return
                     }
-                } catch (e: com.videolive.app.media.VideoInputException) {
-                    failNow(e.message ?: "Unable to read this video.")
-                    return
-                } catch (t: Throwable) {
-                    failNow("Unable to read this video.")
-                    return
-                }
-                VideoRepository.current = loaded
-            }
+            VideoRepository.current = loaded
             val info = loaded.info
 
             // Microphone setup (only when requested).
