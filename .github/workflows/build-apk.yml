@@ -54,6 +54,17 @@ jobs:
             exit $rc
           fi
 
+      - name: Verify smart-exception on RELEASE runtime classpath
+        run: |
+          gradle :app:dependencies --configuration releaseRuntimeClasspath > deptree.txt || true
+          grep -n "smart-exception" deptree.txt | head -10 | sed 's/^/::notice::/'
+          echo "### smart-exception in release runtime classpath" >> "$GITHUB_STEP_SUMMARY"
+          grep -n "smart-exception" deptree.txt >> "$GITHUB_STEP_SUMMARY" || true
+          missing=0
+          grep -q "smart-exception-java"    deptree.txt || { echo "::error::smart-exception-java MISSING from release runtime classpath"; missing=1; }
+          grep -q "smart-exception-common"  deptree.txt || { echo "::error::smart-exception-common MISSING from release runtime classpath"; missing=1; }
+          exit $missing
+
       - name: Prepare artifacts
         run: |
           mkdir -p out
@@ -81,6 +92,28 @@ jobs:
             fi
           done
           exit $missing
+
+      - name: Verify SmartException classes defined inside RELEASE APK dex
+        run: |
+          DEXDUMP=$(ls "$ANDROID_HOME"/build-tools/*/dexdump 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$DEXDUMP" ]; then echo "::error::dexdump not found"; exit 1; fi
+          mkdir -p dexcheck && cd dexcheck
+          unzip -q -o ../out/VideoLive-release.apk 'classes*.dex'
+          echo "### SmartException classes defined in release APK" >> "$GITHUB_STEP_SUMMARY"
+          ok=1
+          for cls in "com/arthenica/smartexception/java/Exceptions" \
+                     "com/arthenica/smartexception/Exceptions" \
+                     "com/arthenica/ffmpegkit/FFmpegKit"; do
+            if "$DEXDUMP" classes*.dex | grep -q "Class descriptor.*'L$cls;'"; then
+              echo "::notice::class $cls DEFINED in release APK dex"
+              echo "- ✅ \`$cls\`" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error::class $cls NOT defined in release APK dex"
+              echo "- ❌ \`$cls\` MISSING" >> "$GITHUB_STEP_SUMMARY"
+              ok=0
+            fi
+          done
+          exit $ok
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4

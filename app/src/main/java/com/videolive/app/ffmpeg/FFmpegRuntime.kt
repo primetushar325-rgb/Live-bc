@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFmpegKitConfig
+import com.arthenica.ffmpegkit.FFprobeKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.videolive.app.util.Sanitize
 import java.io.File
@@ -73,10 +74,29 @@ object FFmpegRuntime {
         }
         LogStore.event("ABI check OK: FFmpeg binary/library found for $matched")
 
-        // 2) Engine initialization (loads the native libraries).
+        // 2) Java-side dependencies of FFmpegKit. The engine AAR is bundled
+        //    locally, so its transitive deps (smart-exception) must be added
+        //    explicitly. FFmpegKit references com.arthenica.smartexception.java.Exceptions
+        //    during init; if it is missing the device dies with NoClassDefFoundError.
+        try {
+            Class.forName("com.arthenica.smartexception.java.Exceptions")
+            Class.forName("com.arthenica.smartexception.Exceptions")
+            LogStore.event("SmartException dependency loaded")
+        } catch (t: Throwable) {
+            val reason = "SmartException classes missing from APK: " +
+                "${t.javaClass.simpleName}: ${t.message}"
+            LogStore.event(reason)
+            return Report(
+                EngineStatus.InitFailed(reason),
+                null, deviceAbis, apkAbis, matched,
+                "Streaming engine initialization failed."
+            )
+        }
+
+        // 3) Engine initialization (loads the native libraries).
         val version = try {
             val v = FFmpegKitConfig.getFFmpegVersion() ?: "unknown"
-            LogStore.event("FFmpeg engine loaded. Version: $v")
+            LogStore.event("FFmpegKit initialized successfully. Version: $v")
             v
         } catch (t: Throwable) {
             val reason = "${t.javaClass.simpleName}: ${t.message}"
@@ -88,7 +108,7 @@ object FFmpegRuntime {
             )
         }
 
-        // 3) Real execution test: run `ffmpeg -version` and check the result.
+        // 4) Real execution test: run `ffmpeg -version` and check the result.
         val testOk = try {
             val session = FFmpegKit.execute("-version")
             val ok = ReturnCode.isSuccess(session.returnCode)
@@ -110,6 +130,27 @@ object FFmpegRuntime {
         if (!testOk) {
             return Report(
                 EngineStatus.TestFailed("ffmpeg -version did not execute successfully"),
+                version, deviceAbis, apkAbis, matched,
+                "Streaming engine initialization failed."
+            )
+        }
+
+        // 5) FFprobe execution test (used to verify SAF/cache video inputs).
+        val probeOk = try {
+            val session = FFprobeKit.execute("-version")
+            val ok = ReturnCode.isSuccess(session.returnCode)
+            LogStore.event(
+                "FFprobe execution test (-version): " +
+                    if (ok) "SUCCESS" else "FAILED (rc=${session.returnCode})"
+            )
+            ok
+        } catch (t: Throwable) {
+            LogStore.event("FFprobe execution test crashed: ${t.javaClass.simpleName}: ${t.message}")
+            false
+        }
+        if (!probeOk) {
+            return Report(
+                EngineStatus.TestFailed("ffprobe -version did not execute successfully"),
                 version, deviceAbis, apkAbis, matched,
                 "Streaming engine initialization failed."
             )
