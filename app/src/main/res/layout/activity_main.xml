@@ -332,6 +332,21 @@
                         android:contentDescription="@string/label_stream_key"
                         android:src="@drawable/ic_eye" />
                 </LinearLayout>
+
+                <TextView
+                    android:id="@+id/btnTestConnection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/bg_button_secondary"
+                    android:gravity="center"
+                    android:minHeight="46dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="@string/test_connection"
+                    android:textColor="@color/primary"
+                    android:textSize="13.5sp"
+                    android:textStyle="bold" />
             </LinearLayout>
 
             <LinearLayout

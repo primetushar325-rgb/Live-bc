@@ -31,6 +31,7 @@ class LiveActivity : AppCompatActivity() {
     private lateinit var txtConnection: TextView
     private lateinit var txtAudio: TextView
     private lateinit var btnMuteMic: TextView
+    private lateinit var txtYouTubeHint: TextView
 
     private var errorHandled = false
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -48,6 +49,7 @@ class LiveActivity : AppCompatActivity() {
         txtConnection = findViewById(R.id.txtConnection)
         txtAudio = findViewById(R.id.txtAudio)
         btnMuteMic = findViewById(R.id.btnMuteMic)
+        txtYouTubeHint = findViewById(R.id.txtYouTubeHint)
 
         findViewById<TextView>(R.id.btnStopLive).setOnClickListener { confirmStop() }
         findViewById<ImageButton>(R.id.btnLiveSettings).setOnClickListener {
@@ -92,11 +94,11 @@ class LiveActivity : AppCompatActivity() {
 
         when (state.phase) {
             Phase.STREAMING -> {
-                txtConnection.text = "Streaming ✓"
+                txtConnection.text = "Sending video ✓"
                 txtConnection.setTextColor(ContextCompat.getColor(this, R.color.green))
             }
             Phase.CONNECTED -> {
-                txtConnection.text = "Connected ✓"
+                txtConnection.text = "RTMP Connected ✓"
                 txtConnection.setTextColor(ContextCompat.getColor(this, R.color.green))
             }
             Phase.ENCODING -> {
@@ -124,6 +126,12 @@ class LiveActivity : AppCompatActivity() {
                 txtConnection.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
             }
         }
+
+        // Show the YouTube confirmation guidance once the encoder is actually
+        // sending video — the app cannot see YouTube's broadcast state itself.
+        txtYouTubeHint.visibility =
+            if (state.phase == Phase.CONNECTED || state.phase == Phase.STREAMING) View.VISIBLE
+            else View.GONE
 
         val videoAudio = if (state.hasVideoAudio) "Video ON ${state.volumePct}%" else "Video silent"
         val micPart = when {

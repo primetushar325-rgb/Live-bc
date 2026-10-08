@@ -30,6 +30,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.videolive.app.data.SecurePrefs
 import com.videolive.app.data.SettingsRepository
 import com.videolive.app.data.VideoRepository
@@ -40,6 +41,7 @@ import com.videolive.app.media.VideoInputException
 import com.videolive.app.media.VideoLoader
 import com.videolive.app.model.BitrateMode
 import com.videolive.app.model.LoopMode
+import com.videolive.app.net.RtmpProbe
 import com.videolive.app.model.Orientation
 import com.videolive.app.model.Quality
 import com.videolive.app.model.StreamConfig
@@ -280,6 +282,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<TextView>(R.id.btnStartLive).setOnClickListener { validateAndStart() }
+        findViewById<TextView>(R.id.btnTestConnection).setOnClickListener {
+            runDestinationTest()
+        }
         liveBanner.setOnClickListener { startActivity(Intent(this, LiveActivity::class.java)) }
         batteryWarning.setOnClickListener { requestBatteryExemption() }
     }
@@ -572,6 +577,37 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Real destination reachability test (DNS -> TCP -> TLS -> RTMP
+        // handshake) BEFORE the encoder starts. The encoder must not launch
+        // against an unreachable destination.
+        val probeUrl = currentDestinationForTest()
+        if (probeUrl == null) {
+            toast("Please enter a valid RTMP/RTMPS destination.")
+            return
+        }
+        val startButton = findViewById<TextView>(R.id.btnStartLive)
+        startButton.isEnabled = false
+        val loadedRef = loaded
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { RtmpProbe.probe(probeUrl) }
+            startButton.isEnabled = true
+            if (!result.success) {
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setTitle("Destination test failed")
+                    .setMessage(
+                        "The streaming destination could not be reached — the " +
+                            "encoder was NOT started.\n\n" + result.report() +
+                            "\n\nFix the failing step, then try again."
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+                return@launch
+            }
+            beginStreaming(loadedRef)
+        }
+    }
+
+    private fun beginStreaming(loaded: LoadedVideo) {
         // Persist everything the user just typed.
         settingsRepo.serverUrl = etServerUrl.text.toString().trim()
         settingsRepo.fullUrl = etFullUrl.text.toString().trim()
@@ -643,6 +679,50 @@ class MainActivity : AppCompatActivity() {
             ) {
                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
+        }
+    }
+
+    /** Builds the destination URL from the current fields for testing only. */
+    private fun currentDestinationForTest(): String? {
+        return if (switchFullUrl.isChecked) {
+            val url = etFullUrl.text.toString().trim()
+            if (FFmpegCommandBuilder.isValidRtmpUrl(url) && url.none { it.isWhitespace() }) url
+            else null
+        } else {
+            FFmpegCommandBuilder.buildDestinationUrl(
+                fullUrlMode = false,
+                serverUrl = etServerUrl.text.toString().trim(),
+                fullUrl = "",
+                streamKey = etStreamKey.text.toString().trim()
+            )
+        }
+    }
+
+    private fun runDestinationTest() {
+        val url = currentDestinationForTest()
+        if (url == null) {
+            toast("Please enter a valid RTMP/RTMPS destination first.")
+            return
+        }
+        val testButton = findViewById<TextView>(R.id.btnTestConnection)
+        testButton.isEnabled = false
+        val originalText = testButton.text
+        testButton.text = "Testing..."
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { RtmpProbe.probe(url) }
+            testButton.isEnabled = true
+            testButton.text = originalText
+            val suffix = if (result.success) {
+                "\n\nRTMP handshake succeeded — the server is reachable and speaks RTMP(S). " +
+                    "The actual publish happens when you go live."
+            } else {
+                "\n\nFix the failing step before going live."
+            }
+            MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle(if (result.success) "Destination reachable ✓" else "Destination test failed")
+                .setMessage(result.report() + suffix)
+                .setPositiveButton("OK", null)
+                .show()
         }
     }
 

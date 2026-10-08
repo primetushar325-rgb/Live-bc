@@ -294,7 +294,7 @@ class StreamService : Service() {
                 post {
                     it.copy(
                         phase = Phase.CONNECTING,
-                        statusText = if (attempt == 0) "Connecting..."
+                        statusText = if (attempt == 0) "Connecting to YouTube..."
                         else "Reconnecting $attempt/$MAX_ATTEMPTS...",
                         attempt = attempt,
                         liveFps = 0f,
@@ -370,12 +370,22 @@ class StreamService : Service() {
                     lastProgressAt = System.currentTimeMillis()
                     if (!everConnected) {
                         everConnected = true
-                        LogStore.event("RTMP connection accepted — first encoded frame muxed")
+                        // Everything below completes INSIDE the output open,
+                        // before the first frame is ever encoded — the first
+                        // statistic is the proof they all succeeded.
+                        LogStore.event("RTMP(S) transport established (TCP + TLS + RTMP handshake)")
+                        LogStore.event("RTMP connect command successful")
+                        LogStore.event("RTMP publish accepted by server")
+                        LogStore.event(
+                            "First video/audio packets transmitted to ingest " +
+                                "(frame #${st.videoFrameNumber}, ${st.bitrate.toInt()} kbps, " +
+                                "out_time ${st.time} ms, total ${st.size} bytes)"
+                        )
                         post { s ->
                             if (s.phase == Phase.STOPPING || s.phase == Phase.ERROR) s
                             else s.copy(
                                 phase = Phase.CONNECTED,
-                                statusText = "Connected ✓",
+                                statusText = "RTMP connected ✓",
                                 liveFps = st.videoFps,
                                 liveBitrateKbps = st.bitrate.toInt(),
                                 speed = st.speed
@@ -383,13 +393,24 @@ class StreamService : Service() {
                         }
                     } else {
                         if (statsSeen == 2) {
-                            LogStore.event("STREAMING confirmed — packets flowing continuously")
+                            LogStore.event(
+                                "ENCODER STREAMING — packets flowing continuously. " +
+                                    "YouTube broadcast confirmation pending: check the " +
+                                    "YouTube Live Control Room preview (press GO LIVE if needed)."
+                            )
+                        }
+                        if (statsSeen % 30 == 0) {
+                            LogStore.event(
+                                "Stream health: frame #${st.videoFrameNumber}, ${st.videoFps} fps, " +
+                                    "${st.bitrate.toInt()} kbps, out_time ${st.time} ms, " +
+                                    "total ${st.size} bytes"
+                            )
                         }
                         post { s ->
                             if (s.phase == Phase.STOPPING || s.phase == Phase.ERROR) s
                             else s.copy(
                                 phase = Phase.STREAMING,
-                                statusText = "Streaming...",
+                                statusText = "Sending video to YouTube...",
                                 liveFps = st.videoFps,
                                 liveBitrateKbps = st.bitrate.toInt(),
                                 speed = st.speed
