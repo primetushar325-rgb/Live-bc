@@ -5,17 +5,19 @@ plugins {
 
 android {
     namespace = "com.videolive.app"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.videolive.app"
         minSdk = 24
+        // Kept at 34 on purpose: Android 15 (target 35) imposes a 6-hour limit on
+        // dataSync foreground services, which would kill long live streams.
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-        // Ship the ABIs that cover real devices and modern emulators.
+        // The FFmpegKit AARs ship arm64-v8a and x86_64 native libraries.
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 
@@ -55,6 +57,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // Encrypted local storage for the stream key (Android Keystore backed).
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    // FFmpeg 6.0 with OpenSSL (needed for RTMPS to YouTube). Real in-process FFmpeg.
-    implementation("com.arthenica:ffmpeg-kit-https:6.0-2")
+    // Real in-process FFmpeg (FFmpegKit). The maintained continuation publishes under
+    // dev.ffmpegkit-maintained (the original com.arthenica artifacts were removed from
+    // Maven Central in April 2025). Same com.arthenica.ffmpegkit API.
+    // "https-gpl" = TLS (RTMPS to YouTube) + libx264 H.264 encoder (GPL variant).
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-https-gpl:6.0.3")
 }

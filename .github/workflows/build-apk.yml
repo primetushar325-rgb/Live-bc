@@ -23,7 +23,19 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build APK
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        run: |
+          set +e
+          gradle :app:assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
+          rc=${PIPESTATUS[0]}
+          if [ $rc -ne 0 ]; then
+            echo "### Build failure log" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 120 build.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep -E "^e: |> Task .*FAILED|error:|FAILURE:|Caused by:|What went wrong|Could not|\* What|\* Try" build.log \
+              | sort -u | head -30 | sed 's/^/::error::/'
+            exit $rc
+          fi
 
       - name: Prepare artifact
         run: |
