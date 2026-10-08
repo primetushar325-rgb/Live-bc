@@ -11,6 +11,14 @@
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
+        <ImageView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="10dp"
+            android:contentDescription="@string/app_name"
+            android:scaleType="fitCenter"
+            android:src="@drawable/logo_live_vip" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -269,6 +277,112 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/rowNowPlaying"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_now_playing"
+                android:textColor="@color/text_secondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtNowPlaying"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:ellipsize="middle"
+                android:gravity="end"
+                android:maxLines="1"
+                android:textColor="@color/cyan"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_reconnects"
+                android:textColor="@color/text_secondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtReconnects"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="@color/text_primary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_device_temp"
+                android:textColor="@color/text_secondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtDeviceTemp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="@color/text_primary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/rowLastError"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_last_error"
+                android:textColor="@color/text_secondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtLastError"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:maxLines="2"
+                android:textColor="@color/red"
+                android:textSize="12.5sp" />
+        </LinearLayout>
+
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
@@ -299,7 +413,43 @@
                 android:textSize="13.5sp"
                 android:textStyle="bold" />
         </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/rowMicLevel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_mic_level"
+                android:textColor="@color/text_secondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtMicLevel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="@color/cyan"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/txtAnalyticsNote"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/youtube_analytics_note"
+        android:textColor="@color/text_faint"
+        android:textSize="11.5sp" />
 
     <View
         android:layout_width="match_parent"

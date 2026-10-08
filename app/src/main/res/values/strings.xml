@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Video Live</string>
+    <string name="app_name">LIVE VIP</string>
 
-    <string name="header_title">Video Live</string>
+    <string name="header_title">LIVE VIP</string>
     <string name="header_subtitle">Stream your video. Go Live.</string>
 
     <string name="card_select_video">SELECT VIDEO</string>
@@ -40,8 +40,65 @@
 
     <string name="loop_one">Loop One</string>
     <string name="loop_one_sub">Repeat this video continuously without reconnecting</string>
-    <string name="loop_all">Loop All</string>
-    <string name="loop_all_sub">Playlist — coming soon</string>
+    <string name="loop_all">Playlist Mode</string>
+    <string name="loop_all_sub">Multiple videos in ONE continuous stream — tap to manage</string>
+
+    <!-- Phase 3: Playlist -->
+    <string name="playlist_title">Playlist</string>
+    <string name="playlist_add">＋ ADD VIDEOS</string>
+    <string name="playlist_empty">No videos yet. Add 2 or more videos — they play back-to-back in one continuous stream (no reconnect between items).</string>
+    <string name="playlist_loop_mode">Playback order</string>
+    <string name="loop_mode_all">Loop All — repeat the whole playlist</string>
+    <string name="loop_mode_sequential">Sequential — play once, then stop</string>
+    <string name="loop_mode_shuffle">Shuffle — random order, play once</string>
+    <string name="playlist_duration">Session duration</string>
+    <string name="duration_unlimited">Unlimited (until you stop)</string>
+    <string name="playlist_clear">CLEAR PLAYLIST</string>
+    <string name="playlist_save">SAVE &amp; USE</string>
+    <string name="playlist_mismatch">These videos have different codecs/resolutions. Seamless playback needs identical format — the stream will refuse to start if they don\'t match.</string>
+    <string name="btn_playlist">📋 PLAYLIST</string>
+    <string name="btn_destinations">📡 DESTINATIONS</string>
+
+    <!-- Phase 4: Framing -->
+    <string name="card_framing">FRAMING</string>
+    <string name="frame_fit">Fit (letterbox)</string>
+    <string name="frame_fill">Fill (crop)</string>
+    <string name="frame_hint">Applied to the encoded output when the stream starts. Your original video file is never modified.</string>
+    <string name="label_zoom">Zoom</string>
+    <string name="label_pan_x">Pan X</string>
+    <string name="label_pan_y">Pan Y</string>
+    <string name="reset_framing">RESET</string>
+
+    <!-- Phase 5: Mic volume -->
+    <string name="label_mic_volume">Mic Level</string>
+
+    <!-- Phase 7: Thermal -->
+    <string name="settings_thermal_title">DEVICE TEMPERATURE GUARD</string>
+    <string name="thermal_warn_label">Warning from</string>
+    <string name="thermal_stop_label">Safe stop at</string>
+    <string name="thermal_hint">Temperature is read from the phone\'s battery sensor while streaming. At the safe-stop point the stream ends cleanly to protect your device.</string>
+
+    <!-- Phase 3 gate -->
+    <string name="settings_playlist_title">EXPERIMENTAL</string>
+    <string name="settings_playlist_switch">Enable Playlist mode</string>
+
+    <!-- Phase 8: Destinations -->
+    <string name="destinations_title">Destinations</string>
+    <string name="destinations_hint">Save up to 3 RTMP/RTMPS destinations. Stream keys stay encrypted on this phone and are never shown or logged. The ACTIVE destination is used for streaming.</string>
+    <string name="destination_test">TEST</string>
+    <string name="destination_active">ACTIVE</string>
+    <string name="destination_add">＋ ADD DESTINATION</string>
+    <string name="destination_name">Name</string>
+    <string name="destination_server">Server URL</string>
+    <string name="destination_key">Stream Key</string>
+
+    <!-- Phase 9: Live screen -->
+    <string name="row_reconnects">Reconnects</string>
+    <string name="row_last_error">Last error</string>
+    <string name="row_mic_level">Mic level</string>
+    <string name="row_now_playing">Now playing</string>
+    <string name="youtube_analytics_note">YouTube analytics unavailable — this app publishes video only. See YouTube Studio for viewers and stats.</string>
+    <string name="row_device_temp">Device temp</string>
 
     <string name="start_live">🔴 START LIVE</string>
     <string name="stop_live">⏹ STOP LIVE</string>

@@ -2,6 +2,7 @@ package com.videolive.app.data
 
 import android.content.Context
 import com.videolive.app.model.BitrateMode
+import com.videolive.app.model.FrameMode
 import com.videolive.app.model.LoopMode
 import com.videolive.app.model.Orientation
 import com.videolive.app.model.Quality
@@ -60,4 +61,40 @@ class SettingsRepository(context: Context) {
     var loopMode: LoopMode
         get() = LoopMode.ONE
         set(value) = prefs.edit().putString("loop_mode", value.name).apply()
+
+    // ---- Phase 4: framing (applied to the encoder output at stream start) ----
+    var frameMode: FrameMode
+        get() = if (prefs.getString("frame_mode", "FIT") == "FILL") FrameMode.FILL else FrameMode.FIT
+        set(value) = prefs.edit().putString("frame_mode", value.name).apply()
+
+    var zoomPct: Int
+        get() = prefs.getInt("zoom_pct", 100)
+        set(value) = prefs.edit().putInt("zoom_pct", value).apply()
+
+    var panXPct: Int
+        get() = prefs.getInt("pan_x_pct", 0)
+        set(value) = prefs.edit().putInt("pan_x_pct", value).apply()
+
+    var panYPct: Int
+        get() = prefs.getInt("pan_y_pct", 0)
+        set(value) = prefs.edit().putInt("pan_y_pct", value).apply()
+
+    // ---- Phase 5: independent microphone gain ----
+    var micVolumePct: Int
+        get() = prefs.getInt("mic_volume", 100)
+        set(value) = prefs.edit().putInt("mic_volume", value).apply()
+
+    // ---- Phase 3: playlist experimental gate ----
+    var playlistEnabled: Boolean
+        get() = prefs.getBoolean("playlist_enabled", true)
+        set(value) = prefs.edit().putBoolean("playlist_enabled", value).apply()
+
+    // ---- Phase 7: thermal guard thresholds (°C, battery sensor) ----
+    var thermalWarnC: Int
+        get() = prefs.getInt("thermal_warn_c", 41)
+        set(value) = prefs.edit().putInt("thermal_warn_c", value).apply()
+
+    var thermalCritC: Int
+        get() = prefs.getInt("thermal_crit_c", 45)
+        set(value) = prefs.edit().putInt("thermal_crit_c", value).apply()
 }

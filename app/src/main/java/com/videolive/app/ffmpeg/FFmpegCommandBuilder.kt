@@ -1,16 +1,26 @@
 package com.videolive.app.ffmpeg
 
+import com.videolive.app.model.FrameMode
+import com.videolive.app.model.LoopMode
 import com.videolive.app.model.StreamConfig
 import com.videolive.app.model.VideoInfo
+import java.io.File
 import java.util.Locale
 
 /**
  * Builds the FFmpeg argument list dynamically from the user's selections.
  *
  * Looping strategy (CRITICAL):
- * The input is looped inside ONE FFmpeg session with `-stream_loop -1` paced by `-re`.
- * The RTMP output is opened exactly once and is never closed at a loop boundary,
- * so YouTube sees one continuous stream and output PTS/DTS stay monotonic.
+ * The input is looped inside ONE FFmpeg session with `-stream_loop -1` paced
+ * by `-re`. The RTMP output is opened exactly once and is never closed at a
+ * loop boundary, so YouTube sees one continuous stream and output PTS/DTS
+ * stay monotonic.
+ *
+ * Playlists (Phase 3): multiple prepared cache files are played through the
+ * concat demuxer as ONE input, still ONE session / ONE RTMP output. Loop All
+ * adds `-stream_loop -1` around the whole list. Sequential/Shuffle play one
+ * pass and finish. This requires codec-compatible items (same video codec,
+ * resolution and audio layout) — enforced by the caller.
  */
 object FFmpegCommandBuilder {
 
@@ -24,7 +34,6 @@ object FFmpegCommandBuilder {
         val (w, h) = config.outputSize()
         val fps = config.fps
         val bitrateK = config.targetBitrateKbps()
-        val volume = config.videoVolumePct.coerceIn(0, 100) / 100f
 
         val args = mutableListOf<String>()
 
@@ -34,11 +43,55 @@ object FFmpegCommandBuilder {
         // Input 0: the local video, looped forever, paced at real-time speed.
         args += listOf("-re", "-stream_loop", "-1", "-i", ffmpegInput)
 
+        appendInputsAndOutput(args, config, info.hasAudio, w, h, fps, bitrateK, micPipePath)
+        args += destinationUrl
+        return args
+    }
+
+    /**
+     * Playlist variant: ONE concat-demuxer input over the prepared cache files.
+     * [concatListFile] must contain `file '<path>'` lines in play order.
+     */
+    fun buildPlaylist(
+        config: StreamConfig,
+        hasAudio: Boolean,
+        concatListFile: File,
+        destinationUrl: String,
+        micPipePath: String?
+    ): List<String> {
+        val (w, h) = config.outputSize()
+        val fps = config.fps
+        val bitrateK = config.targetBitrateKbps()
+
+        val args = mutableListOf<String>()
+        args += listOf("-hide_banner", "-stats", "-stats_period", "1")
+
+        // Loop All wraps the whole playlist; Sequential/Shuffle play one pass.
+        args += listOf("-re")
+        if (config.loopMode == LoopMode.ALL) args += listOf("-stream_loop", "-1")
+        args += listOf("-f", "concat", "-safe", "0", "-i", concatListFile.absolutePath)
+
+        appendInputsAndOutput(args, config, hasAudio, w, h, fps, bitrateK, micPipePath)
+        args += destinationUrl
+        return args
+    }
+
+    // Shared tail: extra inputs (silence/mic), video filter chain, encoders, muxer.
+    private fun appendInputsAndOutput(
+        args: MutableList<String>,
+        config: StreamConfig,
+        hasAudio: Boolean,
+        w: Int,
+        h: Int,
+        fps: Int,
+        bitrateK: Int,
+        micPipePath: String?
+    ) {
         var nextIndex = 1
         var silenceIndex: Int? = null
         var micIndex: Int? = null
 
-        if (!info.hasAudio && micPipePath == null) {
+        if (!hasAudio && micPipePath == null) {
             // YouTube requires an audio track — generate silence.
             args += listOf(
                 "-f", "lavfi", "-i",
@@ -53,14 +106,9 @@ object FFmpegCommandBuilder {
             micIndex = nextIndex++
         }
 
-        // Video mapping + exact output geometry (letterbox/pillarbox to the chosen aspect).
+        // Video mapping + framing (fit/fill + zoom/pan, applied at start only).
         args += listOf("-map", "0:v:0")
-        args += listOf(
-            "-vf",
-            "scale=$w:$h:force_original_aspect_ratio=decrease," +
-                "pad=$w:$h:(ow-iw)/2:(oh-ih)/2:color=black," +
-                "setsar=1"
-        )
+        args += listOf("-vf", videoFilter(config, w, h))
 
         // H.264 encode tuned for low-latency live streaming (CBR).
         args += listOf(
@@ -78,23 +126,33 @@ object FFmpegCommandBuilder {
         )
 
         // Audio routing.
+        val volume = config.videoVolumePct.coerceIn(0, 100) / 100f
+        val micVolume = config.micVolumePct.coerceIn(0, 100) / 100f
         when {
-            micPipePath != null && info.hasAudio -> {
-                // Real mixer: video audio (with user volume) + microphone, via amix.
+            micPipePath != null && hasAudio -> {
+                // Real mixer: video audio (user volume) + microphone (own gain),
+                // via amix. normalize=0 keeps the video audio at its set level.
                 val vol = String.format(Locale.US, "%.2f", volume)
+                val mvol = String.format(Locale.US, "%.2f", micVolume)
                 args += listOf(
                     "-filter_complex",
                     "[0:a:0]volume=$vol[a0];" +
-                        "[$micIndex:a]aformat=sample_fmts=s16:sample_rates=44100:channel_layouts=mono[m];" +
+                        "[$micIndex:a]aformat=sample_fmts=s16:sample_rates=44100:" +
+                        "channel_layouts=mono,volume=$mvol[m];" +
                         "[a0][m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]",
                     "-map", "[aout]"
                 )
             }
             micPipePath != null -> {
                 // Video has no audio: mic becomes the only audio source.
-                args += listOf("-map", "$micIndex:a:0")
+                val mvol = String.format(Locale.US, "%.2f", micVolume)
+                args += listOf(
+                    "-filter_complex",
+                    "[$micIndex:a]volume=$mvol[m]",
+                    "-map", "[m]"
+                )
             }
-            info.hasAudio -> {
+            hasAudio -> {
                 args += listOf("-map", "0:a:0?")
                 if (config.videoVolumePct < 100) {
                     args += listOf("-af", String.format(Locale.US, "volume=%.2f", volume))
@@ -111,20 +169,40 @@ object FFmpegCommandBuilder {
         // FLV output over RTMP/RTMPS. This URL is the ONLY output; it stays open
         // across every loop of the video.
         args += listOf("-f", "flv", "-flvflags", "no_duration_filesize")
-        args += destinationUrl
-
-        return args
     }
 
     /**
-     * Combines server + key (or the advanced full URL) into the final
-     * destination. Returns null when anything is malformed. Validates BEFORE
-     * the encoder ever starts:
-     *  - scheme must be rtmp:// or rtmps://
-     *  - no whitespace anywhere (spaces break the connection silently)
-     *  - server must have a host part; key must be non-empty
-     *  - exactly ONE slash joins server and key (no duplicates)
+     * Framing filter. FIT letterboxes, FILL crops; zoom (100-300%) and pan
+     * (-100..100 on both axes) are applied AFTER framing, on the composed
+     * canvas, so what the preview describes is exactly what the encoder sends.
+     * Defaults reproduce the proven fit+pad chain exactly.
      */
+    fun videoFilter(config: StreamConfig, w: Int, h: Int): String {
+        val base = when (config.frameMode) {
+            FrameMode.FIT ->
+                "scale=$w:$h:force_original_aspect_ratio=decrease," +
+                    "pad=$w:$h:(ow-iw)/2:(oh-ih)/2:color=black"
+            FrameMode.FILL ->
+                "scale=$w:$h:force_original_aspect_ratio=increase," +
+                    "crop=$w:$h"
+        }
+        val zoom = config.zoomPct.coerceIn(100, 300) / 100f
+        val panX = config.panXPct.coerceIn(-100, 100) / 100f
+        val panY = config.panYPct.coerceIn(-100, 100) / 100f
+        if (zoom <= 1.001f && panX == 0f && panY == 0f) return "$base,setsar=1"
+
+        val z = String.format(Locale.US, "%.2f", zoom)
+        // Zoom in around the (optionally panned) centre of the framed canvas.
+        val px = String.format(Locale.US, "%.3f", panX)
+        val py = String.format(Locale.US, "%.3f", panY)
+        return base + "," +
+            "scale=iw*$z:ih*$z," +
+            "crop=$w:$h:(iw-$w)/2+$px*(iw-$w)/2:(ih-$h)/2+$py*(ih-$h)/2," +
+            "setsar=1"
+    }
+
+    /** Combines server + key (or the advanced full URL) into the final
+     * destination. Returns null when anything is malformed. */
     fun buildDestinationUrl(
         fullUrlMode: Boolean,
         serverUrl: String,

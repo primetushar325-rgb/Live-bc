@@ -35,6 +35,14 @@ class LiveActivity : AppCompatActivity() {
     private lateinit var txtLoop: TextView
     private lateinit var txtNetwork: TextView
     private lateinit var btnRetryNow: TextView
+    private lateinit var rowNowPlaying: View
+    private lateinit var txtNowPlaying: TextView
+    private lateinit var txtReconnects: TextView
+    private lateinit var txtDeviceTemp: TextView
+    private lateinit var rowLastError: View
+    private lateinit var txtLastError: TextView
+    private lateinit var rowMicLevel: View
+    private lateinit var txtMicLevel: TextView
 
     private var errorHandled = false
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -57,6 +65,14 @@ class LiveActivity : AppCompatActivity() {
         txtNetwork = findViewById(R.id.txtNetwork)
         btnRetryNow = findViewById(R.id.btnRetryNow)
         btnRetryNow.setOnClickListener { StreamService.requestRetryNow() }
+        rowNowPlaying = findViewById(R.id.rowNowPlaying)
+        txtNowPlaying = findViewById(R.id.txtNowPlaying)
+        txtReconnects = findViewById(R.id.txtReconnects)
+        txtDeviceTemp = findViewById(R.id.txtDeviceTemp)
+        rowLastError = findViewById(R.id.rowLastError)
+        txtLastError = findViewById(R.id.txtLastError)
+        rowMicLevel = findViewById(R.id.rowMicLevel)
+        txtMicLevel = findViewById(R.id.txtMicLevel)
 
         findViewById<TextView>(R.id.btnStopLive).setOnClickListener { confirmStop() }
         findViewById<ImageButton>(R.id.btnLiveSettings).setOnClickListener {
@@ -143,7 +159,44 @@ class LiveActivity : AppCompatActivity() {
         btnRetryNow.visibility =
             if (state.phase == Phase.RECONNECTING) View.VISIBLE else View.GONE
 
-        txtLoop.text = "Loop ${state.loopCount + 1} • item 1/1 (${state.videoName})"
+        txtLoop.text = if (state.playlistPosition.isNotEmpty()) {
+            "Loop ${state.loopCount + 1} (playlist)"
+        } else {
+            "Loop ${state.loopCount + 1} • item 1/1 (${state.videoName})"
+        }
+
+        // Phase 3: show which playlist item is on air.
+        if (state.playlistPosition.isNotEmpty()) {
+            rowNowPlaying.visibility = View.VISIBLE
+            txtNowPlaying.text = state.playlistPosition
+        } else {
+            rowNowPlaying.visibility = View.GONE
+        }
+
+        // Phase 9: real reconnect counter + last error (if any).
+        txtReconnects.text = if (state.attempt > 0) "${state.attempt}/5" else "0"
+        if (state.lastError.isNotEmpty()) {
+            rowLastError.visibility = View.VISIBLE
+            txtLastError.text = state.lastError
+        } else {
+            rowLastError.visibility = View.GONE
+        }
+
+        // Phase 7: real battery-sensor temperature (0 = not read yet).
+        txtDeviceTemp.text = if (state.deviceTempC > 0.0) {
+            String.format(java.util.Locale.US, "%.1f°C", state.deviceTempC)
+        } else "—"
+
+        // Phase 5: live microphone input level.
+        if (state.micActive) {
+            rowMicLevel.visibility = View.VISIBLE
+            val bar = "▮".repeat(state.micLevelPct / 10) +
+                "▯".repeat((10 - state.micLevelPct / 10).coerceAtLeast(0))
+            txtMicLevel.text = "$bar ${state.micLevelPct}%"
+        } else {
+            rowMicLevel.visibility = View.GONE
+        }
+
         txtNetwork.text = if (state.networkOk) "OK" else "Poor / offline"
         txtNetwork.setTextColor(
             ContextCompat.getColor(this, if (state.networkOk) R.color.green else R.color.amber)

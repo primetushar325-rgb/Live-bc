@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TEMPORARY placeholder. Will be replaced by the owner-provided LIVE VIP
+     logo PNG (same resource name) fetched from the repository. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <path
+        android:fillColor="#F7F7F7"
+        android:pathData="M48,48m-46,0a46,46 0,1 1,92 0a46,46 0,1 1,-92 0" />
+    <path
+        android:fillColor="#111111"
+        android:pathData="M48,48m-42,0a42,42 0,1 1,84 0a42,42 0,1 1,-84 0" />
+    <path
+        android:fillColor="#F7F7F7"
+        android:pathData="M48,48m-38,0a38,38 0,1 1,76 0a38,38 0,1 1,-76 0" />
+    <path
+        android:fillColor="#D40000"
+        android:pathData="M38,30 L66,48 L38,66 z" />
+</vector>

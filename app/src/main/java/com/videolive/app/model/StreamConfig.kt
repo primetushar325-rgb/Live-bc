@@ -4,12 +4,16 @@ import java.io.Serializable
 
 enum class Orientation { VERTICAL, HORIZONTAL }
 
-enum class LoopMode { ONE, ALL }
+enum class LoopMode { ONE, ALL, SEQUENTIAL, SHUFFLE }
 
 enum class BitrateMode { AUTO, MANUAL }
 
-/**
- * Output quality presets. The pair is the landscape (16:9) resolution;
+/** Preview-studio framing. Applied to the encoder at stream start. */
+enum class FrameMode { FIT, FILL }
+
+enum class StopPolicy { STOP_AFTER_DURATION, CONTINUE_UNTIL_STOPPED }
+
+/** Output quality presets. The pair is the landscape (16:9) resolution;
  * vertical streams swap width and height.
  *
  * Auto bitrates are conservative CBR targets suitable for YouTube Live.
@@ -30,6 +34,21 @@ enum class Quality(val label: String, val width: Int, val height: Int, val autoB
     }
 }
 
+/** One playlist entry (metadata only; the byte-level cache copy is prepared
+ * by the service right before streaming and reused across items). */
+data class StreamItem(
+    val uri: String,
+    val displayName: String,
+    val sizeBytes: Long,
+    val durationMs: Long = 0L,
+    val width: Int = 0,
+    val height: Int = 0,
+    val fps: Int = 0,
+    val hasAudio: Boolean = true,
+    val videoCodec: String = "",
+    val audioCodec: String = ""
+) : Serializable
+
 /**
  * Everything needed to start a stream except the stream key.
  * The key is read from encrypted storage by the service and is never
@@ -49,7 +68,16 @@ data class StreamConfig(
     val loopMode: LoopMode,
     val fullUrlMode: Boolean,
     val serverUrl: String,
-    val fullUrl: String
+    val fullUrl: String,
+    // Phase 3-9 additions (all defaulted so the single-video path is unchanged).
+    val items: List<StreamItem> = emptyList(),
+    val sessionDurationHours: Int = 0,
+    val stopPolicy: StopPolicy = StopPolicy.CONTINUE_UNTIL_STOPPED,
+    val frameMode: FrameMode = FrameMode.FIT,
+    val zoomPct: Int = 100,
+    val panXPct: Int = 0,
+    val panYPct: Int = 0,
+    val micVolumePct: Int = 100
 ) : Serializable {
 
     fun targetBitrateKbps(): Int = when (bitrateMode) {
@@ -58,6 +86,9 @@ data class StreamConfig(
     }
 
     fun outputSize(): Pair<Int, Int> = quality.outputSize(orientation)
+
+    /** True when a multi-item playlist session should be used. */
+    val isPlaylist: Boolean get() = items.size > 1 && loopMode != LoopMode.ONE
 }
 
 /** Probed information about the selected local video. */

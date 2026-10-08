@@ -39,5 +39,10 @@ data class StreamUiState(
     val hasVideoAudio: Boolean = true,
     val volumePct: Int = 100,
     val loopCount: Int = 0,
-    val networkOk: Boolean = true
+    val networkOk: Boolean = true,
+    // Phase 5/7/9 dashboard additions.
+    val micLevelPct: Int = 0,
+    val deviceTempC: Double = 0.0,
+    val playlistPosition: String = "",   // "Now playing: <item> (n of m)"
+    val lastError: String = ""
 )

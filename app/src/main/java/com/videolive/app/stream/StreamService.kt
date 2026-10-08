@@ -6,11 +6,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -27,10 +30,15 @@ import com.videolive.app.ffmpeg.FFmpegCommandBuilder
 import com.videolive.app.ffmpeg.FFmpegManager
 import com.videolive.app.ffmpeg.LogStore
 import com.videolive.app.ffmpeg.RunResult
+import com.videolive.app.data.SettingsRepository
 import com.videolive.app.media.LoadedVideo
 import com.videolive.app.media.VideoLoader
+import com.videolive.app.model.LoopMode
+import com.videolive.app.model.StopPolicy
 import com.videolive.app.model.StreamConfig
 import com.videolive.app.util.Net
+import java.io.File
+import java.util.Locale
 import kotlin.coroutines.coroutineContext
 import kotlin.math.min
 import kotlinx.coroutines.CoroutineScope
@@ -141,11 +149,26 @@ class StreamService : Service() {
     @Volatile private var connectTimedOut = false
     @Volatile private var liveNotified = false
 
+    // Playlist session bookkeeping (Phase 3).
+    private var playlistMode = false
+    private var playlistDurations = LongArray(0)
+    private var playlistNames = emptyArray<String>()
+    private var totalPlaylistMs = 0L
+    @Volatile private var durationReached = false
+
+    // Thermal guard (Phase 7).
+    private lateinit var settingsRepo: SettingsRepository
+    @Volatile private var deviceTempC = 0.0
+    private var thermalWarnShown = false
+    @Volatile private var thermalCritFired = false
+    private var batteryReceiver: BroadcastReceiver? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
+        settingsRepo = SettingsRepository(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -162,6 +185,12 @@ class StreamService : Service() {
                 lastConfig = config
                 stopRequested = false
                 liveNotified = false
+                playlistMode = false
+                totalPlaylistMs = 0L
+                durationReached = false
+                thermalWarnShown = false
+                thermalCritFired = false
+                deviceTempC = 0.0
                 startedAt = System.currentTimeMillis()
                 isStreaming = true
                 ServiceCompat.startForeground(
@@ -171,6 +200,7 @@ class StreamService : Service() {
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                 )
                 acquireWakeLock()
+                startThermalMonitor()
                 streamJob?.cancel()
                 streamJob = scope.launch { runStream(config) }
             }
@@ -240,23 +270,73 @@ class StreamService : Service() {
             // Sanitize masks the path (stream key) of rtmp(s) URLs.
             LogStore.event("RTMP destination validated: $destination")
 
-            // loadOnce is single-flight: even if something else is preparing
-            // the same video right now, this waits and reuses that result —
-            // it can never start a second cache copy.
-            val loaded: LoadedVideo =
-                VideoRepository.current?.takeIf { it.source.displayName == config.videoName }
-                    ?: try {
-                        VideoLoader.loadOnce(this@StreamService, Uri.parse(config.videoUri))
-                    } catch (e: com.videolive.app.media.VideoInputException) {
-                        LogStore.event("Startup aborted: input preparation failed")
-                        failNow(e.message ?: "Unable to read this video.")
-                        return
-                    } catch (t: Throwable) {
-                        LogStore.event("Startup aborted: input preparation crashed (${t.javaClass.simpleName})")
-                        failNow("Unable to read this video.")
-                        return
-                    }
-            VideoRepository.current = loaded
+            // loadOnce / prepareBatch are single-flight: even if something else
+            // is preparing right now, this waits and reuses the result — a
+            // second cache copy can never start.
+            val loadedList: List<LoadedVideo> = if (config.isPlaylist) {
+                LogStore.event(
+                    "Preparing playlist: ${config.items.size} items " +
+                        "(cache reuse enabled, mode=${config.loopMode})"
+                )
+                try {
+                    VideoLoader.prepareBatch(this@StreamService, config.items)
+                } catch (e: com.videolive.app.media.VideoInputException) {
+                    LogStore.event("Startup aborted: playlist preparation failed")
+                    failNow(e.message ?: "Unable to read one of the playlist videos.")
+                    return
+                } catch (t: Throwable) {
+                    LogStore.event("Startup aborted: playlist preparation crashed (${t.javaClass.simpleName})")
+                    failNow("Unable to read one of the playlist videos.")
+                    return
+                }
+            } else {
+                listOf(
+                    VideoRepository.current?.takeIf { it.source.displayName == config.videoName }
+                        ?: try {
+                            VideoLoader.loadOnce(this@StreamService, Uri.parse(config.videoUri))
+                        } catch (e: com.videolive.app.media.VideoInputException) {
+                            LogStore.event("Startup aborted: input preparation failed")
+                            failNow(e.message ?: "Unable to read this video.")
+                            return
+                        } catch (t: Throwable) {
+                            LogStore.event("Startup aborted: input preparation crashed (${t.javaClass.simpleName})")
+                            failNow("Unable to read this video.")
+                            return
+                        }
+                )
+            }
+
+            playlistMode = config.isPlaylist && loadedList.size > 1
+            if (playlistMode) {
+                // Seamless concat requires identical codec params across items.
+                val first = loadedList.first().info
+                val uniform = loadedList.all {
+                    it.info.videoCodec == first.videoCodec &&
+                        it.info.width == first.width &&
+                        it.info.height == first.height &&
+                        it.info.hasAudio == first.hasAudio &&
+                        (!first.hasAudio || it.info.audioCodec == first.audioCodec)
+                }
+                if (!uniform) {
+                    failNow(
+                        "Playlist videos must share the same codec, resolution and audio " +
+                            "layout for seamless playback. Re-encode mismatched items to match."
+                    )
+                    return
+                }
+                loadedList.forEachIndexed { i, lv ->
+                    LogStore.event(
+                        "Playlist item ${i + 1}: ${lv.info.width}x${lv.info.height}, " +
+                            "${lv.info.fps} fps, ${lv.info.durationMs / 1000}s, " +
+                            "audio=${if (lv.info.hasAudio) "yes" else "no"} " +
+                            (if (lv.source.isTemporaryCopy) "(cache bridge copy)" else "(direct read)")
+                    )
+                }
+            } else {
+                VideoRepository.current = loadedList.first()
+            }
+
+            val loaded = loadedList.first()
             val info = loaded.info
             LogStore.event(
                 "Input prepared: " +
@@ -267,8 +347,27 @@ class StreamService : Service() {
             LogStore.event(
                 "Output plan: H.264 + AAC -> FLV -> RTMP, " +
                     "${config.outputSize().first}x${config.outputSize().second} @ ${config.fps} fps, " +
-                    "${config.targetBitrateKbps()} kbps, loop=in-engine (-stream_loop -1)"
+                    "${config.targetBitrateKbps()} kbps, " +
+                    (if (playlistMode) "playlist=${loadedList.size} items (${config.loopMode})"
+                    else "loop=in-engine (-stream_loop -1)")
             )
+
+            // Playlist playback order: shuffle once per session; reconnects
+            // always resume the same order.
+            val playOrder: List<Int> =
+                if (playlistMode && config.loopMode == LoopMode.SHUFFLE) loadedList.indices.shuffled()
+                else loadedList.indices.toList()
+            if (playlistMode) {
+                playlistDurations = LongArray(playOrder.size) { loadedList[playOrder[it]].info.durationMs }
+                playlistNames = playOrder.map { loadedList[it].info.displayName }.toTypedArray()
+                totalPlaylistMs = playlistDurations.sum()
+                LogStore.event(
+                    "Playlist total duration: ${totalPlaylistMs / 60000} min, " +
+                        "policy=${config.stopPolicy}" +
+                        (if (config.stopPolicy == StopPolicy.STOP_AFTER_DURATION)
+                            " after ${config.sessionDurationHours}h" else "")
+                )
+            }
 
             // Microphone setup (only when requested).
             var micActive = config.micOn
@@ -339,13 +438,35 @@ class StreamService : Service() {
                     MicMixer.switchPipe(freshPipe)
                 }
 
-                val args = FFmpegCommandBuilder.build(
-                    config,
-                    info,
-                    loaded.source.ffmpegInput,
-                    destination,
-                    if (micActive) pipePath else null
-                )
+                val args: List<String> = if (playlistMode) {
+                    // Concat demuxer list for this session's play order. The
+                    // list file lives next to the cache copies; it is rebuilt
+                    // on every attempt so a reconnect replays from the start
+                    // of the ordered list.
+                    val concatFile = File(cacheDir, "playlist_concat.txt")
+                    withContext(Dispatchers.IO) {
+                        concatFile.writeText(buildString {
+                            playOrder.forEach { i ->
+                                append("file '").append(loadedList[i].source.ffmpegInput).append("'\n")
+                            }
+                        })
+                    }
+                    FFmpegCommandBuilder.buildPlaylist(
+                        config,
+                        info.hasAudio,
+                        concatFile,
+                        destination,
+                        if (micActive) pipePath else null
+                    )
+                } else {
+                    FFmpegCommandBuilder.build(
+                        config,
+                        info,
+                        loaded.source.ffmpegInput,
+                        destination,
+                        if (micActive) pipePath else null
+                    )
+                }
                 // Full command for diagnostics — destination (contains the stream
                 // key) is replaced before logging; Sanitize masks it anyway.
                 val maskedCommand = args.joinToString(" ") {
@@ -394,8 +515,43 @@ class StreamService : Service() {
                 val result = ffmpeg.run(args, stageOnLog) { st ->
                     statsSeen++
                     lastProgressAt = System.currentTimeMillis()
-                    val loops =
-                        if (info.durationMs > 0) (st.time / info.durationMs).toInt() else 0
+                    val loops: Int
+                    var itemName = config.videoName
+                    if (playlistMode && totalPlaylistMs > 0) {
+                        val loopAll = config.loopMode == LoopMode.ALL
+                        val pos = if (loopAll) st.time % totalPlaylistMs else st.time
+                        loops = if (loopAll) (st.time / totalPlaylistMs).toInt() else 0
+                        var cum = 0L
+                        var idx = playlistDurations.size - 1
+                        for (k in playlistDurations.indices) {
+                            cum += playlistDurations[k]
+                            if (pos < cum) {
+                                idx = k
+                                break
+                            }
+                        }
+                        itemName = playlistNames[idx]
+                    } else {
+                        loops = if (info.durationMs > 0) (st.time / info.durationMs).toInt() else 0
+                    }
+
+                    // Phase 3: session duration limit — safe stop, never a crash.
+                    if (!durationReached && config.stopPolicy == StopPolicy.STOP_AFTER_DURATION &&
+                        config.sessionDurationHours > 0 &&
+                        st.time >= config.sessionDurationHours * 3600_000L
+                    ) {
+                        durationReached = true
+                        LogStore.event(
+                            "Session duration limit reached (${config.sessionDurationHours}h) — stopping safely"
+                        )
+                        stopRequested = true
+                        MicMixer.stop()
+                        ffmpeg.cancelCurrent()
+                    }
+
+                    // Phase 7: thermal guard on every stats tick.
+                    checkThermal()
+
                     val netOk = Net.isOnline(this@StreamService)
                     if (!everConnected) {
                         everConnected = true
@@ -419,7 +575,11 @@ class StreamService : Service() {
                                 liveBitrateKbps = st.bitrate.toInt(),
                                 speed = st.speed,
                                 loopCount = loops,
-                                networkOk = netOk
+                                networkOk = netOk,
+                                videoName = config.videoName,
+                                playlistPosition = if (playlistMode) itemName else "",
+                                micLevelPct = MicMixer.levelPct,
+                                deviceTempC = deviceTempC
                             )
                         }
                     } else {
@@ -457,7 +617,10 @@ class StreamService : Service() {
                                     liveBitrateKbps = st.bitrate.toInt(),
                                     speed = st.speed,
                                     loopCount = loops,
-                                    networkOk = netOk
+                                    networkOk = netOk,
+                                    playlistPosition = if (playlistMode) itemName else "",
+                                    micLevelPct = MicMixer.levelPct,
+                                    deviceTempC = deviceTempC
                                 )
                             }
                         }
@@ -470,6 +633,11 @@ class StreamService : Service() {
                 watchdog.cancel()
 
                 if (stopRequested) break
+
+                if (thermalCritFired) {
+                    // failNow already posted ERROR and the engine was cancelled.
+                    break
+                }
 
                 if (connectTimedOut) {
                     LogStore.event("ERROR: RTMP connection timed out after ${CONNECT_TIMEOUT_MS / 1000}s")
@@ -487,6 +655,20 @@ class StreamService : Service() {
 
                 when (result) {
                     is RunResult.Success -> {
+                        if (playlistMode && config.loopMode != LoopMode.ALL) {
+                            // Sequential/Shuffle playlists finish the list and the
+                            // concat demuxer exits cleanly — that is the intended
+                            // end of the session, not a failure.
+                            LogStore.event("Playlist finished after ${ranSeconds}s — ending session")
+                            post {
+                                it.copy(
+                                    phase = Phase.STOPPED,
+                                    statusText = "Playlist finished — stream ended",
+                                    elapsedMs = System.currentTimeMillis() - startedAt
+                                )
+                            }
+                            return
+                        }
                         LogStore.event("FFmpeg exited cleanly after ${ranSeconds}s (unexpected)")
                         attempt++
                         if (attempt > MAX_ATTEMPTS) {
@@ -522,6 +704,7 @@ class StreamService : Service() {
                     is RunResult.Failed -> {
                         val err = result.error
                         LogStore.event("FFmpeg failed: ${err.userMessage}")
+                        post { it.copy(lastError = err.userMessage) }
                         if (err.kind == ErrorKind.AUTH || err.kind == ErrorKind.INPUT) {
                             failNow(err.userMessage)
                             return
@@ -543,8 +726,14 @@ class StreamService : Service() {
                 }
             }
 
-            post { it.copy(phase = Phase.STOPPED, statusText = "Live ended") }
-            LogStore.event("Stream stopped cleanly")
+            if (!thermalCritFired) {
+                val stopText = when {
+                    durationReached -> "Duration limit reached — stream stopped safely"
+                    else -> "Live ended"
+                }
+                post { it.copy(phase = Phase.STOPPED, statusText = stopText) }
+                LogStore.event("Stream stopped cleanly")
+            }
         } catch (t: Throwable) {
             LogStore.event("Unexpected error: ${t.javaClass.simpleName}")
             failNow("Unexpected error: ${t.javaClass.simpleName}")
@@ -582,8 +771,72 @@ class StreamService : Service() {
     }
 
     private fun failNow(message: String) {
-        post { it.copy(phase = Phase.ERROR, statusText = message, errorText = message) }
+        post {
+            it.copy(
+                phase = Phase.ERROR,
+                statusText = message,
+                errorText = message,
+                lastError = message
+            )
+        }
         LogStore.event("ERROR: $message")
+    }
+
+    // ---- Phase 7: thermal guard --------------------------------------------
+    // Temperature comes from the battery sensor (ACTION_BATTERY_CHANGED), in
+    // tenths of a degree. Thresholds are user-configurable in Settings; no
+    // values are invented here.
+
+    private fun startThermalMonitor() {
+        if (batteryReceiver != null) return
+        try {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (intent == null) return
+                    val tenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)
+                    if (tenths > 0) deviceTempC = tenths / 10.0
+                }
+            }
+            registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            batteryReceiver = receiver
+        } catch (t: Throwable) {
+            LogStore.event("Thermal monitor unavailable: ${t.javaClass.simpleName}")
+        }
+    }
+
+    private fun stopThermalMonitor() {
+        val r = batteryReceiver
+        if (r != null) {
+            try {
+                unregisterReceiver(r)
+            } catch (_: Throwable) {
+            }
+            batteryReceiver = null
+        }
+    }
+
+    private fun checkThermal() {
+        val temp = deviceTempC
+        if (temp <= 0.0) return
+        val warnC = settingsRepo.thermalWarnC
+        val critC = settingsRepo.thermalCritC.coerceAtLeast(warnC + 1)
+        if (temp >= critC && !thermalCritFired) {
+            thermalCritFired = true
+            LogStore.event(
+                "Device temperature critical (${String.format(Locale.US, "%.1f", temp)}°C ≥ ${critC}°C) — " +
+                    "safe stop to protect the device"
+            )
+            failNow("Phone temperature critical — stream stopped to protect the device.")
+            stopRequested = true
+            MicMixer.stop()
+            ffmpeg.cancelCurrent()
+        } else if (temp >= warnC && !thermalWarnShown) {
+            thermalWarnShown = true
+            LogStore.event(
+                "Device temperature high (${String.format(Locale.US, "%.1f", temp)}°C ≥ ${warnC}°C) — " +
+                    "monitoring; safe stop if it reaches ${critC}°C"
+            )
+        }
     }
 
     private fun startTicker() {
@@ -599,6 +852,7 @@ class StreamService : Service() {
     private fun cleanup(pipePath: String?) {
         isStreaming = false
         tickerJob?.cancel()
+        stopThermalMonitor()
         try {
             MicMixer.stop()
         } catch (_: Throwable) {

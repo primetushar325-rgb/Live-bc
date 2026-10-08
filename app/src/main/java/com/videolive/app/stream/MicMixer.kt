@@ -23,6 +23,10 @@ object MicMixer {
 
     @Volatile var muted: Boolean = false
 
+    /** Approximate live input level 0-100 for the dashboard (UI only). */
+    @Volatile var levelPct: Int = 0
+        private set
+
     private val running = AtomicBoolean(false)
     @Volatile private var pipePath: String? = null
     @Volatile private var recorder: AudioRecord? = null
@@ -121,7 +125,12 @@ object MicMixer {
                             continue
                         }
                         failStreak = 0
-                        if (muted) buf.fill(0, 0, n)
+                        if (muted) {
+                            levelPct = 0
+                            buf.fill(0, 0, n)
+                        } else {
+                            levelPct = rmsPercent(buf, n)
+                        }
                     }
                     raf.write(buf, 0, n)
                 }
@@ -155,5 +164,21 @@ object MicMixer {
             Thread.sleep(ms)
         } catch (_: InterruptedException) {
         }
+    }
+
+    /** Rough RMS of 16-bit LE PCM mapped to 0-100 for display. */
+    private fun rmsPercent(buf: ByteArray, n: Int): Int {
+        var sum = 0L
+        var count = 0
+        var i = 0
+        while (i + 1 < n) {
+            val sample = ((buf[i + 1].toInt() shl 8) or (buf[i].toInt() and 0xFF)).toShort()
+            sum += sample.toLong() * sample.toLong()
+            count++
+            i += 2
+        }
+        if (count == 0) return 0
+        val rms = Math.sqrt(sum.toDouble() / count)
+        return ((rms / 32768.0) * 250.0).toInt().coerceIn(0, 100)
     }
 }

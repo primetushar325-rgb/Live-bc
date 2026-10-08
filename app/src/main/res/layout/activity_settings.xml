@@ -145,6 +145,151 @@
                 android:textSize="13sp" />
         </LinearLayout>
 
+        <!-- Device temperature guard (Phase 7) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="@string/settings_thermal_title"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/thermal_warn_label"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13.5sp" />
+
+                <SeekBar
+                    android:id="@+id/seekThermalWarn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="2"
+                    android:max="15"
+                    android:progressTint="@color/amber"
+                    android:thumbTint="@color/amber" />
+
+                <TextView
+                    android:id="@+id/txtThermalWarn"
+                    android:layout_width="52dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:textColor="@color/amber"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/thermal_stop_label"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13.5sp" />
+
+                <SeekBar
+                    android:id="@+id/seekThermalCrit"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="2"
+                    android:max="15"
+                    android:progressTint="@color/red"
+                    android:thumbTint="@color/red" />
+
+                <TextView
+                    android:id="@+id/txtThermalCrit"
+                    android:layout_width="52dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:textColor="@color/red"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/thermal_hint"
+                android:textColor="@color/text_faint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <!-- Experimental (Phase 3 gate) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="@string/settings_playlist_title"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/settings_playlist_switch"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13.5sp" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchPlaylist"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Playlist mode streams several videos in one continuous session. Turn this OFF to always stream only the single selected video."
+                android:textColor="@color/text_faint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
         <!-- Logs -->
         <TextView
             android:id="@+id/btnOpenLogs"
@@ -164,7 +309,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
             android:gravity="center"
-            android:text="Video Live 1.0 — local video to YouTube Live streaming"
+                android:text="LIVE VIP 3.0 — local video to YouTube Live streaming"
             android:textColor="@color/text_faint"
             android:textSize="11.5sp" />
     </LinearLayout>

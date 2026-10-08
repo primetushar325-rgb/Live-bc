@@ -256,6 +256,64 @@ object VideoLoader {
      * Buffered byte-for-byte copy from the content Uri into the private cache.
      * Returns the cache file only when the copy is COMPLETE and verified.
      */
+    /**
+     * Prepares every playlist item: reuses a verified existing cache copy when
+     * one exists, otherwise performs the byte-level bridge copy. Runs under
+     * the same single-flight lock as [prepareOnce].
+     */
+    suspend fun prepareBatch(
+        context: Context,
+        items: List<com.videolive.app.model.StreamItem>,
+        onItemProgress: ((index: Int, copied: Long, total: Long) -> Unit)? = null
+    ): List<LoadedVideo> = prepareMutex.withLock {
+        // Every copy belonging to THIS batch is protected from eviction until
+        // streaming starts (concat reads them one by one during the session).
+        val protectedFiles = mutableListOf<File>()
+        items.mapIndexed { index, item ->
+            val uri = Uri.parse(item.uri)
+            val dir = cacheDir(context)
+            val reused = if (item.sizeBytes > 0) {
+                CacheIndex.lookup(dir, item.uri, item.sizeBytes)
+            } else null
+            if (reused != null) {
+                protectedFiles += reused
+                LogStore.event(
+                    "Playlist item ${index + 1}: cache reused (${reused.length()} bytes) — no re-copy"
+                )
+                val fileSource = InputSource.FileSource(
+                    path = reused.absolutePath,
+                    displayName = item.displayName,
+                    sizeBytes = reused.length(),
+                    deletable = false
+                )
+                val probed = MediaProbe.probe(fileSource)
+                if (probed == null) {
+                    throw VideoInputException(
+                        VideoInputException.Kind.UNDECODABLE,
+                        "Video preparation failed."
+                    )
+                }
+                LoadedVideo(fileSource, probed)
+            } else {
+                val inspection = inspect(context, uri)
+                val loaded = withContext(Dispatchers.IO) {
+                    prepareForFFmpeg(context.applicationContext, uri, inspection) { c, t ->
+                        onItemProgress?.invoke(index, c, t)
+                    }
+                }
+                val src = loaded.source
+                if (src is InputSource.FileSource) {
+                    val copy = File(src.path)
+                    protectedFiles += copy
+                    CacheIndex.put(
+                        dir, item.uri, item.sizeBytes, copy, evictable = protectedFiles
+                    )
+                }
+                loaded
+            }
+        }
+    }
+
     private fun copyToCache(
         context: Context,
         uri: Uri,
@@ -265,8 +323,8 @@ object VideoLoader {
     ): File? {
         return try {
             val dir = cacheDir(context)
-            // A new selection replaces any previous bridge copy.
-            dir.listFiles()?.forEach { it.delete() }
+            // NOTE: no directory wipe here — multiple playlist copies coexist;
+            // bounded eviction is owned by CacheIndex.
 
             val safeName = displayName.replace(Regex("[^a-zA-Z0-9.\\-_ ]"), "_").take(60)
             val target = File(dir, "stream_input_${System.currentTimeMillis()}_$safeName")

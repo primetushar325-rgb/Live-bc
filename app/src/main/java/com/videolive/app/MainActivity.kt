@@ -31,6 +31,7 @@ import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.videolive.app.data.PlaylistRepository
 import com.videolive.app.data.SecurePrefs
 import com.videolive.app.data.SettingsRepository
 import com.videolive.app.data.VideoRepository
@@ -40,7 +41,9 @@ import com.videolive.app.media.LoadedVideo
 import com.videolive.app.media.VideoInputException
 import com.videolive.app.media.VideoLoader
 import com.videolive.app.model.BitrateMode
+import com.videolive.app.model.FrameMode
 import com.videolive.app.model.LoopMode
+import com.videolive.app.model.StopPolicy
 import com.videolive.app.net.RtmpProbe
 import com.videolive.app.model.Orientation
 import com.videolive.app.model.Quality
@@ -93,6 +96,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchMic: SwitchCompat
     private lateinit var optLoopOne: LinearLayout
     private lateinit var optLoopAll: LinearLayout
+
+    // Phase 3-5 UI.
+    private lateinit var micVolumeRow: LinearLayout
+    private lateinit var seekMicVolume: SeekBar
+    private lateinit var txtMicVolume: TextView
+    private lateinit var txtPlaylistSummary: TextView
+    private lateinit var chipFit: TextView
+    private lateinit var chipFill: TextView
+    private lateinit var seekZoom: SeekBar
+    private lateinit var txtZoom: TextView
+    private lateinit var seekPanX: SeekBar
+    private lateinit var txtPanX: TextView
+    private lateinit var seekPanY: SeekBar
+    private lateinit var txtPanY: TextView
 
     private val qualityChips = mutableMapOf<Quality, TextView>()
     private val fpsChips = mutableMapOf<Int, TextView>()
@@ -150,6 +167,18 @@ class MainActivity : AppCompatActivity() {
         switchMic = findViewById(R.id.switchMic)
         optLoopOne = findViewById(R.id.optLoopOne)
         optLoopAll = findViewById(R.id.optLoopAll)
+        micVolumeRow = findViewById(R.id.micVolumeRow)
+        seekMicVolume = findViewById(R.id.seekMicVolume)
+        txtMicVolume = findViewById(R.id.txtMicVolume)
+        txtPlaylistSummary = findViewById(R.id.txtPlaylistSummary)
+        chipFit = findViewById(R.id.chipFit)
+        chipFill = findViewById(R.id.chipFill)
+        seekZoom = findViewById(R.id.seekZoom)
+        txtZoom = findViewById(R.id.txtZoom)
+        seekPanX = findViewById(R.id.seekPanX)
+        txtPanX = findViewById(R.id.txtPanX)
+        seekPanY = findViewById(R.id.seekPanY)
+        txtPanY = findViewById(R.id.txtPanY)
 
         qualityChips[Quality.Q360] = findViewById(R.id.q360)
         qualityChips[Quality.Q480] = findViewById(R.id.q480)
@@ -182,6 +211,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         checkBatteryOptimization()
         liveBanner.visibility = if (StreamService.isStreaming) View.VISIBLE else View.GONE
+        refreshPlaylistSummary()
         askNotificationPermissionIfNeeded()
         if (VideoRepository.current == null) {
             settingsRepo.videoUri?.let { reloadSavedVideo(Uri.parse(it)) }
@@ -278,11 +308,79 @@ class MainActivity : AppCompatActivity() {
             } else {
                 settingsRepo.micOn = false
             }
+            micVolumeRow.visibility = if (switchMic.isChecked) View.VISIBLE else View.GONE
         }
 
         optLoopOne.setOnClickListener { selectLoop(LoopMode.ONE) }
         optLoopAll.setOnClickListener {
-            toast("Loop All (playlist) is coming soon — Loop One keeps this video looping continuously.")
+            startActivity(Intent(this, PlaylistActivity::class.java))
+        }
+
+        // Phase 3/8 managers.
+        findViewById<TextView>(R.id.btnPlaylist).setOnClickListener {
+            startActivity(Intent(this, PlaylistActivity::class.java))
+        }
+        findViewById<TextView>(R.id.btnDestinations).setOnClickListener {
+            startActivity(Intent(this, DestinationsActivity::class.java))
+        }
+
+        // Phase 5: independent mic gain.
+        micVolumeRow.visibility = if (switchMic.isChecked) View.VISIBLE else View.GONE
+        seekMicVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtMicVolume.text = "$progress%"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settingsRepo.micVolumePct = sb?.progress ?: 100
+            }
+        })
+
+        // Phase 4: framing controls (applied to the encoder at stream start).
+        chipFit.setOnClickListener { selectFrameMode(FrameMode.FIT) }
+        chipFill.setOnClickListener { selectFrameMode(FrameMode.FILL) }
+        seekZoom.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtZoom.text = "${progress + 100}%"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settingsRepo.zoomPct = (sb?.progress ?: 0) + 100
+            }
+        })
+        seekPanX.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtPanX.text = "${progress - 100}"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settingsRepo.panXPct = (sb?.progress ?: 100) - 100
+            }
+        })
+        seekPanY.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtPanY.text = "${progress - 100}"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settingsRepo.panYPct = (sb?.progress ?: 100) - 100
+            }
+        })
+        findViewById<TextView>(R.id.btnResetFraming).setOnClickListener {
+            selectFrameMode(FrameMode.FIT)
+            settingsRepo.zoomPct = 100
+            settingsRepo.panXPct = 0
+            settingsRepo.panYPct = 0
+            renderFramingControls()
+            toast("Framing reset")
         }
 
         findViewById<TextView>(R.id.btnStartLive).setOnClickListener { validateAndStart() }
@@ -312,6 +410,12 @@ class MainActivity : AppCompatActivity() {
         suppressMicListener = true
         switchMic.isChecked = settingsRepo.micOn
         suppressMicListener = false
+        micVolumeRow.visibility = if (settingsRepo.micOn) View.VISIBLE else View.GONE
+        val savedMicVol = settingsRepo.micVolumePct
+        seekMicVolume.progress = savedMicVol
+        txtMicVolume.text = "$savedMicVol%"
+
+        renderFramingControls()
 
         selectLoop(LoopMode.ONE)
 
@@ -342,6 +446,44 @@ class MainActivity : AppCompatActivity() {
         settingsRepo.loopMode = mode
         optLoopOne.isSelected = mode == LoopMode.ONE
         optLoopAll.isSelected = mode == LoopMode.ALL
+    }
+
+    private fun selectFrameMode(mode: FrameMode) {
+        settingsRepo.frameMode = mode
+        chipFit.isSelected = mode == FrameMode.FIT
+        chipFill.isSelected = mode == FrameMode.FILL
+    }
+
+    private fun renderFramingControls() {
+        selectFrameMode(settingsRepo.frameMode)
+        val zoom = settingsRepo.zoomPct.coerceIn(100, 300)
+        seekZoom.progress = zoom - 100
+        txtZoom.text = "$zoom%"
+        val px = settingsRepo.panXPct.coerceIn(-100, 100)
+        seekPanX.progress = px + 100
+        txtPanX.text = "$px"
+        val py = settingsRepo.panYPct.coerceIn(-100, 100)
+        seekPanY.progress = py + 100
+        txtPanY.text = "$py"
+    }
+
+    /** Summary line under the Playlist Mode card. */
+    private fun refreshPlaylistSummary() {
+        val pl = PlaylistRepository.load(this)
+        txtPlaylistSummary.text = if (pl != null && pl.items.size >= 2) {
+            val mins = pl.items.sumOf { it.durationMs } / 60000
+            val modeLabel = when (pl.loopMode) {
+                LoopMode.ALL -> "Loop All"
+                LoopMode.SEQUENTIAL -> "Sequential"
+                LoopMode.SHUFFLE -> "Shuffle"
+                else -> "Loop One"
+            }
+            "${pl.items.size} videos • $modeLabel • ~${mins} min per pass" +
+                (if (pl.stopPolicy == StopPolicy.STOP_AFTER_DURATION)
+                    " • stops after ${pl.sessionDurationHours}h" else "")
+        } else {
+            getString(R.string.loop_all_sub)
+        }
     }
 
     private fun onVideoPicked(uri: Uri) {
@@ -535,6 +677,15 @@ class MainActivity : AppCompatActivity() {
             toast("Please wait — the previous START is still being prepared.")
             return
         }
+        // Phase 3: playlist sessions prepare their own items (with cache
+        // reuse) inside the service — no pre-selected single video needed.
+        val playlist = PlaylistRepository.load(this)
+        if (settingsRepo.playlistEnabled && playlist != null && playlist.items.size >= 2) {
+            startInProgress = true
+            com.videolive.app.ffmpeg.LogStore.startSession()
+            startStreamWith(null)
+            return
+        }
         val loaded = VideoRepository.current
         if (loaded == null) {
             // The temporary bridge copy may have been deleted after the last
@@ -573,7 +724,7 @@ class MainActivity : AppCompatActivity() {
         startStreamWith(loaded)
     }
 
-    private fun startStreamWith(loaded: LoadedVideo) {
+    private fun startStreamWith(loaded: LoadedVideo?) {
         // Releases the START guard and re-enables the button on any abort path.
         fun abort(message: String) {
             toast(message)
@@ -616,7 +767,7 @@ class MainActivity : AppCompatActivity() {
         beginStreaming(loaded)
     }
 
-    private fun beginStreaming(loaded: LoadedVideo) {
+    private fun beginStreaming(loaded: LoadedVideo?) {
         if (StreamService.isStreaming) {
             toast("A stream is already running.")
             startInProgress = false
@@ -638,26 +789,74 @@ class MainActivity : AppCompatActivity() {
             toast(note)
         }
 
-        val config = StreamConfig(
-            videoUri = settingsRepo.videoUri.orEmpty(),
-            videoName = loaded.source.displayName,
-            hasAudio = loaded.info.hasAudio,
-            orientation = settingsRepo.orientation,
-            quality = settingsRepo.quality,
-            fps = fps,
-            bitrateMode = settingsRepo.bitrateMode,
-            manualBitrateKbps = settingsRepo.manualBitrateKbps,
-            videoVolumePct = settingsRepo.videoVolumePct,
-            micOn = settingsRepo.micOn,
-            loopMode = LoopMode.ONE,
-            fullUrlMode = settingsRepo.fullUrlMode,
-            serverUrl = settingsRepo.serverUrl,
-            fullUrl = settingsRepo.fullUrl
-        )
+        // Phase 3: if a saved playlist with 2+ items exists and the
+        // experimental gate is on, stream it as ONE continuous session.
+        val playlist = PlaylistRepository.load(this)
+        val usePlaylist = settingsRepo.playlistEnabled &&
+            playlist != null && playlist.items.size >= 2
+
+        val config = if (usePlaylist && playlist != null) {
+            StreamConfig(
+                videoUri = playlist.items.first().uri,
+                videoName = "Playlist (${playlist.items.size} videos)",
+                hasAudio = playlist.items.first().hasAudio,
+                orientation = settingsRepo.orientation,
+                quality = settingsRepo.quality,
+                fps = fps,
+                bitrateMode = settingsRepo.bitrateMode,
+                manualBitrateKbps = settingsRepo.manualBitrateKbps,
+                videoVolumePct = settingsRepo.videoVolumePct,
+                micOn = settingsRepo.micOn,
+                loopMode = playlist.loopMode,
+                fullUrlMode = settingsRepo.fullUrlMode,
+                serverUrl = settingsRepo.serverUrl,
+                fullUrl = settingsRepo.fullUrl,
+                items = playlist.items,
+                sessionDurationHours = playlist.sessionDurationHours,
+                stopPolicy = playlist.stopPolicy,
+                frameMode = settingsRepo.frameMode,
+                zoomPct = settingsRepo.zoomPct,
+                panXPct = settingsRepo.panXPct,
+                panYPct = settingsRepo.panYPct,
+                micVolumePct = settingsRepo.micVolumePct
+            )
+        } else {
+            if (loaded == null) {
+                toast("Please select a video.")
+                startInProgress = false
+                return
+            }
+            StreamConfig(
+                videoUri = settingsRepo.videoUri.orEmpty(),
+                videoName = loaded.source.displayName,
+                hasAudio = loaded.info.hasAudio,
+                orientation = settingsRepo.orientation,
+                quality = settingsRepo.quality,
+                fps = fps,
+                bitrateMode = settingsRepo.bitrateMode,
+                manualBitrateKbps = settingsRepo.manualBitrateKbps,
+                videoVolumePct = settingsRepo.videoVolumePct,
+                micOn = settingsRepo.micOn,
+                loopMode = LoopMode.ONE,
+                fullUrlMode = settingsRepo.fullUrlMode,
+                serverUrl = settingsRepo.serverUrl,
+                fullUrl = settingsRepo.fullUrl,
+                frameMode = settingsRepo.frameMode,
+                zoomPct = settingsRepo.zoomPct,
+                panXPct = settingsRepo.panXPct,
+                panYPct = settingsRepo.panYPct,
+                micVolumePct = settingsRepo.micVolumePct
+            )
+        }
 
         com.videolive.app.ffmpeg.LogStore.event(
-            "Source URI validated: ${loaded.source.displayName} " +
-                "(${if (loaded.source.isTemporaryCopy) "cache bridge" else "direct read"})"
+            if (usePlaylist) {
+                "Playlist session: ${config.items.size} items, mode=${config.loopMode}, " +
+                    "policy=${config.stopPolicy}"
+            } else {
+                "Source URI validated: ${loaded.source.displayName} " +
+                    "(${if (loaded.source.isTemporaryCopy) "cache bridge" else "direct read"})"
+            }
         )
         StreamService.start(this, config)
         // The service owns the session from here; its own isStreaming guard

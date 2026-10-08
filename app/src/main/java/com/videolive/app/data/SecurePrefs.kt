@@ -67,4 +67,16 @@ object SecurePrefs {
         } catch (t: Throwable) {
             null
         }
+
+    /** Generic encrypted secret (used for per-destination stream keys). */
+    fun saveSecret(context: Context, id: String, value: String) {
+        prefs(context).edit().putString(id, value).apply()
+    }
+
+    fun getSecret(context: Context, id: String): String? =
+        try {
+            prefs(context).getString(id, null)
+        } catch (t: Throwable) {
+            null
+        }
 }
