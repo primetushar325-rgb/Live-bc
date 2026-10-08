@@ -360,6 +360,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadVideo(uri: Uri) {
+        // Already prepared for exactly this Uri (screen rotation, returning from
+        // the Live/Settings screens, app resume): reuse it — never re-copy.
+        val alreadyLoaded = VideoRepository.current
+        if (alreadyLoaded != null && VideoRepository.currentUri == uri) {
+            renderVideoCard(alreadyLoaded)
+            return
+        }
         stopPreview()
         previewStatus.text = getString(R.string.analyzing_video)
         emptyPreview.visibility = View.VISIBLE

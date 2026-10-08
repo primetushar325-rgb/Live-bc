@@ -97,6 +97,8 @@ class StreamService : Service() {
         /** Restarts the last attempted stream (used by the Retry action). */
         fun retry(context: Context): Boolean {
             val config = lastConfig ?: return false
+            // A retry is a NEW session — give it its own log session id.
+            LogStore.startSession()
             start(context, config)
             return true
         }
@@ -184,6 +186,9 @@ class StreamService : Service() {
 
     private suspend fun runStream(config: StreamConfig) {
         var pipePath: String? = null
+        // Defensive: a session id must exist so every event of this run is
+        // traceable under one tag (normally started by the START LIVE tap).
+        if (!LogStore.hasSession()) LogStore.startSession()
         LogStore.event("START LIVE requested")
         post {
             StreamUiState(

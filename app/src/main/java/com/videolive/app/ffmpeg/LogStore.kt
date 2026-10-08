@@ -48,6 +48,8 @@ object LogStore {
         if (lines.size > CAPACITY) lines.removeFirst()
     }
 
+    fun hasSession(): Boolean = sessionTag.isNotEmpty()
+
     @Synchronized
     fun snapshot(): String = if (lines.isEmpty()) "(no logs yet)" else lines.joinToString("\n")
 

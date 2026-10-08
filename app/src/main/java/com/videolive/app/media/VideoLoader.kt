@@ -80,6 +80,7 @@ object VideoLoader {
             prepareForFFmpeg(context.applicationContext, uri, inspection, onProgress)
         }
         VideoRepository.current = loaded
+        VideoRepository.currentUri = uri
         loaded
     }
 
@@ -94,6 +95,7 @@ object VideoLoader {
             load(context.applicationContext, uri, onProgress)
         }
         VideoRepository.current = loaded
+        VideoRepository.currentUri = uri
         loaded
     }
 
