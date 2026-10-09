@@ -28,6 +28,7 @@ import com.videolive.app.data.VideoRepository
 import com.videolive.app.ffmpeg.ErrorKind
 import com.videolive.app.ffmpeg.FFmpegCommandBuilder
 import com.videolive.app.ffmpeg.FFmpegManager
+import com.videolive.app.ffmpeg.FFmpegRuntime
 import com.videolive.app.ffmpeg.LogStore
 import com.videolive.app.ffmpeg.RunResult
 import com.videolive.app.data.SettingsRepository
