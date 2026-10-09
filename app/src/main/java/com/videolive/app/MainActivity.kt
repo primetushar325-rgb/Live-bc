@@ -451,6 +451,11 @@ class MainActivity : AppCompatActivity() {
         optVertical.isSelected = o == Orientation.VERTICAL
         optHorizontal.isSelected = o == Orientation.HORIZONTAL
         applyPreviewAspect()
+        // The encoded aspect ratio is fixed for a running RTMP session — the
+        // preview may change freely, but the stream needs a restart.
+        if (StreamService.isStreaming) {
+            toast("Preview updated. The stream keeps its old aspect — restart Live to apply the new one.")
+        }
     }
 
     private fun selectQuality(q: Quality) {

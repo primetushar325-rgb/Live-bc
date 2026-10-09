@@ -154,6 +154,8 @@ class StreamService : Service() {
     private var prevStatTimeMs = 0L
     @Volatile private var measuredFps = 0f
     @Volatile private var softStallWarned = false
+    private var overloadStreak = 0
+    private var overloadWarned = false
 
     /** Service-side mirror of the UI state (terminal notification text etc). */
     @Volatile private var state = StreamUiState()
@@ -278,6 +280,10 @@ class StreamService : Service() {
             }
             // Sanitize masks the path (stream key) of rtmp(s) URLs.
             LogStore.event("RTMP destination validated: $destination")
+
+            // One-time, background capability probe: is a hardware H.264
+            // encoder even packaged? (evidence for the hw-encoder question)
+            withContext(Dispatchers.IO) { FFmpegRuntime.logEncoderCapabilities() }
 
             // loadOnce / prepareBatch are single-flight: even if something else
             // is preparing right now, this waits and reuses the result — a
@@ -492,6 +498,8 @@ class StreamService : Service() {
                 prevStatTimeMs = 0
                 measuredFps = 0f
                 softStallWarned = false
+                overloadStreak = 0
+                overloadWarned = false
                 var statsSeen = 0
                 var inputLogged = false
                 var encoderLogged = false
@@ -562,6 +570,30 @@ class StreamService : Service() {
                         itemName = playlistNames[idx]
                     } else {
                         loops = if (info.durationMs > 0) (st.time / info.durationMs).toInt() else 0
+                    }
+
+                    // Encode-overload detection (several signals, sustained):
+                    // measured cadence well below target WHILE encode speed is
+                    // under realtime means the device cannot keep up — report
+                    // it, never silently "fix" by restarting a healthy stream.
+                    if (measuredFps > 0f && st.speed > 0.0 &&
+                        measuredFps < config.fps * 0.8f && st.speed < 1.0
+                    ) {
+                        overloadStreak++
+                    } else {
+                        overloadStreak = 0
+                    }
+                    if (overloadStreak >= 10 && !overloadWarned) {
+                        overloadWarned = true
+                        LogStore.event(
+                            "ENCODE OVERLOAD suspected: measured " +
+                                "${String.format(Locale.US, "%.1f", measuredFps)} fps vs target " +
+                                "${config.fps}, speed ${String.format(Locale.US, "%.2f", st.speed)}x, " +
+                                "temp ${String.format(Locale.US, "%.1f", deviceTempC)}C. " +
+                                "This device cannot sustain ${config.quality.label}@${config.fps}fps — " +
+                                "for long sessions use 480p or 30 fps, and close heavy " +
+                                "background apps."
+                        )
                     }
 
                     // Phase 3: session duration limit — safe stop, never a crash.

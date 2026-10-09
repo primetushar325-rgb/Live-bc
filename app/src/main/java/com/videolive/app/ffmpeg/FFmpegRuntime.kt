@@ -43,6 +43,44 @@ object FFmpegRuntime {
     }
 
     @Volatile private var cached: Report? = null
+    @Volatile private var encodersLogged = false
+
+    /**
+     * P1.10 evidence: enumerate which H.264 encoders this FFmpeg build
+     * actually packages. Runs once per process, on a background thread.
+     * A hardware option is only ever offered if a hw encoder is proven to
+     * exist here — never assumed.
+     */
+    fun logEncoderCapabilities() {
+        if (encodersLogged) return
+        encodersLogged = true
+        try {
+            val session = FFmpegKit.execute("-hide_banner -encoders")
+            val out = session.output.orEmpty()
+            val h264 = out.lineSequence()
+                .map { it.trim() }
+                .filter { it.contains("H.264") || it.contains("h264") }
+                .toList()
+            val hw = h264.filter {
+                it.contains("mediacodec") || it.contains("v4l2m2m") ||
+                    it.contains("nvenc") || it.contains("qsv") || it.contains("videotoolbox")
+            }
+            LogStore.event(
+                "H.264 encoders packaged: " + (h264.joinToString(" | ").ifEmpty { "none found" })
+            )
+            LogStore.event(
+                if (hw.isEmpty()) {
+                    "No hardware H.264 encoder exists in this FFmpeg build — software " +
+                        "libx264 (veryfast/zerolatency) is the only tested encode path; " +
+                        "a hw option is intentionally NOT offered."
+                } else {
+                    "Hardware H.264 encoders present: ${hw.joinToString(" | ")}"
+                }
+            )
+        } catch (t: Throwable) {
+            LogStore.event("Encoder capability probe failed: ${t.javaClass.simpleName}")
+        }
+    }
 
     fun verify(context: Context, force: Boolean = false): Report {
         cached?.let { if (!force) return it }
