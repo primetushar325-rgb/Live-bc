@@ -1115,7 +1115,7 @@ class StreamService : Service() {
         return when {
             h > 0 && m > 0 -> "$h hour${if (h > 1) "s" else ""} $m minute${if (m > 1) "s" else ""}"
             h > 0 -> "$h hour${if (h > 1) "s" else ""}"
-            else -> "$m minute${if (m != 1) "s" else ""}"
+            else -> "$m minute${if (m != 1L) "s" else ""}"
         }
     }
 
