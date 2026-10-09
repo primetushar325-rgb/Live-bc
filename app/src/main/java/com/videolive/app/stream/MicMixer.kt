@@ -39,6 +39,18 @@ object MicMixer {
             pipePath = path
             return true
         }
+        // Single-instance lifecycle: a previous worker must finish before a
+        // new recorder/thread is created — otherwise a quick stop/start cycle
+        // (e.g. retry after cleanup) can run two AudioRecord workers at once.
+        thread?.let { prev ->
+            if (prev.isAlive) {
+                try {
+                    prev.join(800)
+                } catch (_: InterruptedException) {
+                }
+            }
+        }
+        thread = null
         val minBuf = try {
             AudioRecord.getMinBufferSize(
                 SAMPLE_RATE,

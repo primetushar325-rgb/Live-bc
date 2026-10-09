@@ -19,6 +19,14 @@ sealed class RunResult {
     data class Failed(val error: ClassifiedError) : RunResult()
 }
 
+/** Marks executor tasks that must NEVER be dropped: the session-completion
+ * signal and the statistics heartbeat. Losing completion means the coroutine
+ * suspends forever while the UI still claims LIVE; losing stats starves the
+ * stall watchdog. Ordinary log lines remain droppable under pressure. */
+private class Critical(private val body: () -> Unit) : Runnable {
+    override fun run() = body()
+}
+
 /**
  * Owns the single live FFmpeg session. Execution is in-process (FFmpegKit links
  * FFmpeg natively) — there is no external process that can die unnoticed.
@@ -31,7 +39,9 @@ sealed class RunResult {
  * reported freezes. Therefore every callback here only ENQUEUES a tiny task;
  * one dedicated dispatcher thread drains the queue and does the real work.
  * The queue is bounded and drops diagnostic lines under pressure instead of
- * ever letting diagnostics block the media pipeline.
+ * ever letting diagnostics block the media pipeline — but [Critical] tasks
+ * (completion, statistics) run inline rather than being dropped, so the
+ * completion signal can never be lost to queue saturation.
  */
 class FFmpegManager {
 
@@ -42,8 +52,9 @@ class FFmpegManager {
         0L, TimeUnit.MILLISECONDS,
         LinkedBlockingQueue(4000),
         { r -> Thread(r, "vl-ffmpeg-callbacks") },
-        RejectedExecutionHandler { _, _ ->
-            // Diagnostics may be dropped; the encoder never waits.
+        RejectedExecutionHandler { r, _ ->
+            // Log lines may be dropped; completion and statistics never are.
+            if (r is Critical) r.run()
         }
     )
 
@@ -74,7 +85,9 @@ class FFmpegManager {
         onStats: (Statistics) -> Unit
     ): RunResult = suspendCancellableCoroutine { cont ->
         val complete = FFmpegSessionCompleteCallback { s ->
-            callbackExecutor.execute {
+            // Critical: if the queue is saturated this runs inline instead of
+            // being dropped — the completion signal can never be lost.
+            callbackExecutor.execute(Critical {
                 val result = when {
                     s.returnCode == null -> RunResult.Failed(
                         ClassifiedError(
@@ -87,10 +100,11 @@ class FFmpegManager {
                     else -> RunResult.Failed(ErrorClassifier.classify(LogStore.recentTail()))
                 }
                 if (cont.isActive) cont.resume(result)
-            }
+            })
         }
         val logCallback = LogCallback { log ->
             val message = log.message ?: ""
+            // Droppable diagnostics — never allowed to block the engine.
             callbackExecutor.execute {
                 LogStore.append(message)
                 try {
@@ -100,7 +114,9 @@ class FFmpegManager {
             }
         }
         val statsCallback = StatisticsCallback { st ->
-            callbackExecutor.execute { onStats(st) }
+            // Critical: the stats heartbeat feeds lastProgressAt; dropping it
+            // under load would fake a stall and trigger needless reconnects.
+            callbackExecutor.execute(Critical { onStats(st) })
         }
 
         val s = FFmpegSession.create(

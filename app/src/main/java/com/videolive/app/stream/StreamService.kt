@@ -185,6 +185,13 @@ class StreamService : Service() {
     private var prevBytesFrames = 0L
     private var transportStallStreak = 0
 
+    // out_time-frozen stall: statistics keep arriving (so the idle watchdog is
+    // satisfied) but the encoded timeline no longer advances — a frozen
+    // encoder/muxer. Judged separately from idle, transport and overload.
+    private var lastOutTimeMs = 0L
+    private var lastOutTimeAdvanceAt = 0L
+    private var timeFrozenHandled = false
+
     /** Service-side mirror of the UI state (terminal notification text etc). */
     @Volatile private var state = StreamUiState()
 
@@ -554,6 +561,9 @@ class StreamService : Service() {
                 attemptWallStartMs = 0L
                 driftWarned = false
                 driftCritical = false
+                lastOutTimeMs = 0L
+                lastOutTimeAdvanceAt = 0L
+                timeFrozenHandled = false
                 var statsSeen = 0
                 var inputLogged = false
                 var encoderLogged = false
@@ -619,6 +629,28 @@ class StreamService : Service() {
                     } else if (prevStatTimeMs == 0L) {
                         prevStatFrames = statFrames
                         prevStatTimeMs = statTimeMs
+                    }
+
+                    // out_time-frozen stall: stats arrive but the encoded
+                    // timeline does not advance. The idle watchdog cannot see
+                    // this because progress lines keep coming; judge it on its
+                    // own. 20s of frozen out_time (after connection) restarts
+                    // the engine through the normal bounded recovery path.
+                    if (statTimeMs > lastOutTimeMs) {
+                        lastOutTimeMs = statTimeMs
+                        lastOutTimeAdvanceAt = System.currentTimeMillis()
+                    } else if (everConnected && statTimeMs > 0 && !timeFrozenHandled &&
+                        lastOutTimeAdvanceAt > 0 &&
+                        System.currentTimeMillis() - lastOutTimeAdvanceAt > 20_000L
+                    ) {
+                        timeFrozenHandled = true
+                        LogStore.event(
+                            "PIPELINE STALL: out_time frozen at ${statTimeMs}ms for 20s+ " +
+                                "while stats keep arriving (speed " +
+                                "${String.format(Locale.US, "%.2f", st.speed)}x) — encoder/muxer " +
+                                "not advancing; restarting engine via recovery path"
+                        )
+                        ffmpeg.cancelCurrent()
                     }
 
                     // Transport check on the same window: encoded frames must
