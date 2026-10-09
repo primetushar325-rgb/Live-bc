@@ -73,6 +73,7 @@ class StreamService : Service() {
         const val EXTRA_PROJECT_ID = "project_id"
         const val CHANNEL_ID = "vl_live_channel"
         private const val NOTIFICATION_ID = 1001
+        private const val HEALTH_NOTIFICATION_ID = 1002
         private const val MAX_ATTEMPTS = 5
         private const val WATCHDOG_STALL_MS = 30_000L
         private const val CONNECT_TIMEOUT_MS = 15_000L
@@ -182,6 +183,8 @@ class StreamService : Service() {
     private var attemptWallStartMs = 0L
     private var driftWarned = false
     private var driftCritical = false
+    private var driftFatal = false
+    private var recoveryNotified = false
     private var prevBytesFrames = 0L
     private var transportStallStreak = 0
 
@@ -241,6 +244,18 @@ class StreamService : Service() {
                 encoderInUse = ""
                 forceSoftware = false
                 startedAt = System.currentTimeMillis()
+                // Persist the session start so the true elapsed duration can be
+                // computed even if the Activity closes or the UI restarts.
+                runCatching {
+                    getSharedPreferences("vl_session", MODE_PRIVATE).edit()
+                        .putLong("started_at", startedAt)
+                        .putString("video", config.videoName)
+                        .apply()
+                }
+                // Persistent diagnostics for this session (capped + rotated).
+                runCatching {
+                    LogStore.bindFile(java.io.File(filesDir, "vl_session_log.txt"))
+                }
                 isStreaming = true
                 ServiceCompat.startForeground(
                     this,
@@ -469,6 +484,7 @@ class StreamService : Service() {
                         )
                     }
                     LogStore.event("Network unavailable — waiting ($attempt/$MAX_ATTEMPTS)")
+                    notifyHealth("Network unavailable — recovery attempt $attempt/$MAX_ATTEMPTS…")
                     stoppableDelay(backoffMs(attempt))
                     continue
                 }
@@ -561,6 +577,8 @@ class StreamService : Service() {
                 attemptWallStartMs = 0L
                 driftWarned = false
                 driftCritical = false
+                driftFatal = false
+                recoveryNotified = false
                 lastOutTimeMs = 0L
                 lastOutTimeAdvanceAt = 0L
                 timeFrozenHandled = false
@@ -705,6 +723,20 @@ class StreamService : Service() {
                                 "Recommendation: stop now, lower quality (480p) or FPS, restart."
                         )
                     }
+                    // Fatal drift: output this far behind real time means
+                    // YouTube ingest has almost certainly ended (or will in
+                    // seconds). Never keep claiming LIVE — stop honestly.
+                    if (driftSec >= 120.0 && !driftFatal) {
+                        driftFatal = true
+                        val msg = "Stream fell ${String.format(Locale.US, "%.0f", driftSec)}s behind " +
+                            "real time — YouTube has most likely ended this broadcast. " +
+                            "Restart at 480p or lower FPS for long sessions."
+                        LogStore.event("LATENCY DRIFT fatal: $msg")
+                        failNow(msg)
+                        stopRequested = true
+                        MicMixer.stop()
+                        ffmpeg.cancelCurrent()
+                    }
 
                     val healthLabel = when {
                         transportStallStreak >= 2 -> "Transport stalled"
@@ -783,6 +815,13 @@ class StreamService : Service() {
                     val netOk = Net.isOnline(this@StreamService)
                     if (!everConnected) {
                         everConnected = true
+                        if (attempt > 0 && !recoveryNotified) {
+                            recoveryNotified = true
+                            notifyHealth(
+                                "Recovery succeeded — streaming resumed after " +
+                                    "$attempt reconnect attempt(s)."
+                            )
+                        }
                         // Everything below completes INSIDE the output open,
                         // before the first frame is ever encoded — the first
                         // statistic is the proof they all succeeded.
@@ -830,6 +869,7 @@ class StreamService : Service() {
                                     "net=${if (netOk) "OK" else "POOR"} | reconnects=$attempt | " +
                                     "temp=${String.format(Locale.US, "%.1f", deviceTempC)}C | " +
                                     "drift=${String.format(Locale.US, "%.0f", driftSec)}s | " +
+                                    "mem=${(Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1_048_576L}MB | " +
                                     "frame #${st.videoFrameNumber}, out_time ${st.time} ms, " +
                                     "total ${st.size} bytes, loop ${loops + 1}"
                             )
@@ -921,6 +961,7 @@ class StreamService : Service() {
                                 attempt = attempt
                             )
                         }
+                        notifyHealth("Stream interrupted — recovery attempt $attempt/$MAX_ATTEMPTS…")
                         stoppableDelay(backoffMs(attempt))
                     }
                     is RunResult.Cancelled -> {
@@ -956,6 +997,7 @@ class StreamService : Service() {
                                 attempt = attempt
                             )
                         }
+                        notifyHealth("Stall detected — recovery attempt $attempt/$MAX_ATTEMPTS…")
                         stoppableDelay(backoffMs(attempt))
                     }
                     is RunResult.Failed -> {
@@ -985,6 +1027,7 @@ class StreamService : Service() {
                                 attempt = attempt
                             )
                         }
+                        notifyHealth("Error: ${err.userMessage} — recovery attempt $attempt/$MAX_ATTEMPTS…")
                         stoppableDelay(backoffMs(attempt))
                     }
                 }
@@ -1062,6 +1105,49 @@ class StreamService : Service() {
             )
         }
         LogStore.event("ERROR: $message")
+    }
+
+    /** Formats an elapsed duration for humans, e.g. "1 hour 44 minutes". */
+    private fun formatElapsed(ms: Long): String {
+        val totalMin = (ms / 60000L).coerceAtLeast(0)
+        val h = totalMin / 60
+        val m = totalMin % 60
+        return when {
+            h > 0 && m > 0 -> "$h hour${if (h > 1) "s" else ""} $m minute${if (m > 1) "s" else ""}"
+            h > 0 -> "$h hour${if (h > 1) "s" else ""}"
+            else -> "$m minute${if (m != 1) "s" else ""}"
+        }
+    }
+
+    /** Health/recovery notification: separate id from the foreground badge,
+     * silent, replaces any previous health notice (never duplicates), and
+     * opens the diagnostics screen when tapped. */
+    private fun notifyHealth(text: String) {
+        try {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val logsIntent = Intent(this, com.videolive.app.LogsActivity::class.java)
+            val logsPi = PendingIntent.getActivity(
+                this, 2, logsIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            nm.notify(
+                HEALTH_NOTIFICATION_ID,
+                NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_notify)
+                    .setContentTitle("LIVE VIP — stream health")
+                    .setContentText(text)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                    .setOngoing(false)
+                    .setOnlyAlertOnce(true)
+                    .setSilent(true)
+                    .setAutoCancel(true)
+                    .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                    .setContentIntent(logsPi)
+                    .build()
+            )
+        } catch (t: Throwable) {
+            LogStore.event("Health notification failed: ${t.javaClass.simpleName}")
+        }
     }
 
     // ---- Phase 7: thermal guard --------------------------------------------
@@ -1162,11 +1248,17 @@ class StreamService : Service() {
         }
         // Truthful terminal notification: detach the foreground service but
         // leave a dismissible, accurate end-state notification instead of a
-        // stale "LIVE" badge.
+        // stale "LIVE" badge. Includes the real elapsed duration so an
+        // unexpected end is obvious at a glance.
+        val elapsed = formatElapsed(System.currentTimeMillis() - startedAt)
         val terminal = when (state.phase) {
-            Phase.ERROR -> "STREAM FAILED — ${state.errorText ?: "see Advanced Logs"}"
-            Phase.STOPPING -> "STREAM STOPPED"
-            else -> "LIVE ENDED — ${state.statusText.ifEmpty { "stream stopped" }}"
+            Phase.ERROR -> "STREAM FAILED after $elapsed — ${state.errorText ?: "see diagnostics"}"
+            Phase.STOPPING -> "STREAM STOPPED after $elapsed"
+            else -> "LIVE ENDED after $elapsed — ${state.statusText.ifEmpty { "stream stopped" }}"
+        }
+        // Session ended: clear the persisted start marker.
+        runCatching {
+            getSharedPreferences("vl_session", MODE_PRIVATE).edit().clear().apply()
         }
         try {
             val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -1296,7 +1388,13 @@ class StreamService : Service() {
         )
         return if (terminal) {
             // End-state notification: dismissible, no chronometer, no Stop
-            // action — never claims LIVE after the work is done.
+            // action — never claims LIVE after the work is done. Tapping it
+            // opens the diagnostics screen, not just the dashboard.
+            val logsIntent = Intent(this, com.videolive.app.LogsActivity::class.java)
+            val logsPi = PendingIntent.getActivity(
+                this, 2, logsIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
             NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notify)
                 .setContentTitle("LIVE VIP")
@@ -1308,7 +1406,7 @@ class StreamService : Service() {
                 .setShowWhen(true)
                 .setWhen(System.currentTimeMillis())
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                .setContentIntent(openPi)
+                .setContentIntent(logsPi)
                 .build()
         } else {
             NotificationCompat.Builder(this, CHANNEL_ID)
