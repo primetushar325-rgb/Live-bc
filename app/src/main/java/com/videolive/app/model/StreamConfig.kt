@@ -81,7 +81,8 @@ data class StreamConfig(
     val zoomPct: Int = 100,
     val panXPct: Int = 0,
     val panYPct: Int = 0,
-    val micVolumePct: Int = 100
+    val micVolumePct: Int = 100,
+    val encoderPref: EncoderPref = EncoderPref.AUTO
 ) : Serializable {
 
     fun targetBitrateKbps(): Int = when (bitrateMode) {
