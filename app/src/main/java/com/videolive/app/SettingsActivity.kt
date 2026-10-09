@@ -16,7 +16,6 @@ import androidx.core.content.ContextCompat
 import com.videolive.app.data.SettingsRepository
 import com.videolive.app.ffmpeg.FFmpegRuntime
 import com.videolive.app.util.DeviceCaps
-import com.videolive.app.util.ThemeEngine
 
 class SettingsActivity : AppCompatActivity() {
 
