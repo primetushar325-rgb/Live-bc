@@ -10,11 +10,13 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import com.videolive.app.data.SettingsRepository
 import com.videolive.app.ffmpeg.FFmpegRuntime
 import com.videolive.app.util.DeviceCaps
+import com.videolive.app.util.ThemeEngine
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -24,6 +26,7 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
         setContentView(R.layout.activity_settings)
 
         findViewById<ImageButton>(R.id.btnBack).setOnClickListener { finish() }

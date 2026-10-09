@@ -42,7 +42,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/header_title"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="22sp"
                     android:textStyle="bold" />
 
@@ -50,9 +50,18 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/header_subtitle"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="13sp" />
             </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/btnTheme"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_button_secondary"
+                android:contentDescription="@string/theme"
+                android:src="@drawable/ic_palette" />
 
             <ImageButton
                 android:id="@+id/btnSettings"
@@ -85,7 +94,7 @@
             android:background="@drawable/bg_banner_live"
             android:padding="14dp"
             android:text="@string/return_to_live"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/vlTextPrimary"
             android:textSize="13.5sp"
             android:textStyle="bold"
             android:visibility="gone" />
@@ -117,7 +126,7 @@
                     android:layout_marginStart="8dp"
                     android:letterSpacing="0.12"
                     android:text="@string/card_select_video"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -165,7 +174,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:text="@string/no_video_selected"
-                        android:textColor="@color/text_faint"
+                        android:textColor="?attr/vlTextFaint"
                         android:textSize="13sp" />
                 </LinearLayout>
             </FrameLayout>
@@ -184,7 +193,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="middle"
                     android:maxLines="1"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="15sp"
                     android:textStyle="bold" />
 
@@ -193,7 +202,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="3dp"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12.5sp" />
 
                 <TextView
@@ -201,7 +210,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="3dp"
-                    android:textColor="@color/cyan"
+                    android:textColor="?attr/vlAccent"
                     android:textSize="12.5sp" />
             </LinearLayout>
 
@@ -213,7 +222,7 @@
                 android:background="@drawable/bg_button_secondary"
                 android:gravity="center"
                 android:text="@string/choose_video"
-                android:textColor="@color/primary"
+                android:textColor="?attr/vlAccent"
                 android:textSize="14.5sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -246,7 +255,7 @@
                     android:layout_weight="1"
                     android:letterSpacing="0.12"
                     android:text="@string/card_destination"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12sp"
                     android:textStyle="bold" />
 
@@ -261,7 +270,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:text="@string/full_url_mode"
-                android:textColor="@color/text_faint"
+                android:textColor="?attr/vlTextFaint"
                 android:textSize="11.5sp" />
 
             <LinearLayout
@@ -275,7 +284,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_server_url"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12.5sp" />
 
                 <EditText
@@ -289,8 +298,8 @@
                     android:inputType="textUri"
                     android:minHeight="48dp"
                     android:padding="12dp"
-                    android:textColor="@color/text_primary"
-                    android:textColorHint="@color/text_faint"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textColorHint="?attr/vlTextFaint"
                     android:textSize="14sp" />
 
                 <TextView
@@ -298,7 +307,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
                     android:text="@string/label_stream_key"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12.5sp" />
 
                 <LinearLayout
@@ -319,8 +328,8 @@
                         android:inputType="textPassword"
                         android:minHeight="48dp"
                         android:padding="12dp"
-                        android:textColor="@color/text_primary"
-                        android:textColorHint="@color/text_faint"
+                        android:textColor="?attr/vlTextPrimary"
+                        android:textColorHint="?attr/vlTextFaint"
                         android:textSize="14sp" />
 
                     <ImageButton
@@ -344,7 +353,7 @@
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
                     android:text="@string/test_connection"
-                    android:textColor="@color/primary"
+                    android:textColor="?attr/vlAccent"
                     android:textSize="13.5sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -361,7 +370,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_full_url"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12.5sp" />
 
                 <EditText
@@ -375,8 +384,8 @@
                     android:inputType="textUri"
                     android:minHeight="48dp"
                     android:padding="12dp"
-                    android:textColor="@color/text_primary"
-                    android:textColorHint="@color/text_faint"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textColorHint="?attr/vlTextFaint"
                     android:textSize="14sp" />
             </LinearLayout>
         </LinearLayout>
@@ -408,7 +417,7 @@
                     android:layout_marginStart="8dp"
                     android:letterSpacing="0.12"
                     android:text="@string/card_format"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -434,7 +443,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="9:16"
-                        android:textColor="@color/purple"
+                        android:textColor="?attr/vlAccentSoft"
                         android:textSize="18sp"
                         android:textStyle="bold" />
 
@@ -454,7 +463,7 @@
                         android:layout_marginTop="2dp"
                         android:gravity="center"
                         android:text="@string/format_vertical_sub"
-                        android:textColor="@color/text_faint"
+                        android:textColor="?attr/vlTextFaint"
                         android:textSize="11sp" />
                 </LinearLayout>
 
@@ -473,7 +482,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="16:9"
-                        android:textColor="@color/primary"
+                        android:textColor="?attr/vlAccent"
                         android:textSize="18sp"
                         android:textStyle="bold" />
 
@@ -493,7 +502,7 @@
                         android:layout_marginTop="2dp"
                         android:gravity="center"
                         android:text="@string/format_horizontal_sub"
-                        android:textColor="@color/text_faint"
+                        android:textColor="?attr/vlTextFaint"
                         android:textSize="11sp" />
                 </LinearLayout>
             </LinearLayout>
@@ -526,7 +535,7 @@
                     android:layout_marginStart="8dp"
                     android:letterSpacing="0.12"
                     android:text="@string/card_video_settings"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -536,7 +545,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:text="@string/label_quality"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12.5sp" />
 
             <LinearLayout
@@ -610,7 +619,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 android:text="@string/label_fps"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12.5sp" />
 
             <LinearLayout
@@ -699,7 +708,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 android:text="@string/label_bitrate"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12.5sp" />
 
             <LinearLayout
@@ -725,8 +734,8 @@
                     android:inputType="number"
                     android:minHeight="48dp"
                     android:padding="12dp"
-                    android:textColor="@color/text_primary"
-                    android:textColorHint="@color/text_faint"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textColorHint="?attr/vlTextFaint"
                     android:textSize="14sp"
                     android:visibility="gone" />
             </LinearLayout>
@@ -759,7 +768,7 @@
                     android:layout_marginStart="8dp"
                     android:letterSpacing="0.12"
                     android:text="@string/card_audio"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -775,7 +784,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_video_audio"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="14sp" />
 
                 <SeekBar
@@ -786,8 +795,8 @@
                     android:layout_weight="1"
                     android:max="100"
                     android:progress="100"
-                    android:progressTint="@color/primary"
-                    android:thumbTint="@color/primary" />
+                    android:progressTint="?attr/vlAccent"
+                    android:thumbTint="?attr/vlAccent" />
 
                 <TextView
                     android:id="@+id/txtVolume"
@@ -795,7 +804,7 @@
                     android:layout_height="wrap_content"
                     android:gravity="end"
                     android:text="100%"
-                    android:textColor="@color/cyan"
+                    android:textColor="?attr/vlAccent"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -819,7 +828,7 @@
                     android:layout_marginStart="10dp"
                     android:layout_weight="1"
                     android:text="@string/label_microphone"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="14sp" />
 
                 <androidx.appcompat.widget.SwitchCompat
@@ -841,7 +850,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_mic_volume"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="14sp" />
 
                 <SeekBar
@@ -852,8 +861,8 @@
                     android:layout_weight="1"
                     android:max="200"
                     android:progress="100"
-                    android:progressTint="@color/cyan"
-                    android:thumbTint="@color/cyan" />
+                    android:progressTint="?attr/vlAccent"
+                    android:thumbTint="?attr/vlAccent" />
 
                 <TextView
                     android:id="@+id/txtMicVolume"
@@ -861,7 +870,7 @@
                     android:layout_height="wrap_content"
                     android:gravity="end"
                     android:text="100%"
-                    android:textColor="@color/cyan"
+                    android:textColor="?attr/vlAccent"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -871,7 +880,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="@string/mic_hint"
-                android:textColor="@color/text_faint"
+                android:textColor="?attr/vlTextFaint"
                 android:textSize="11.5sp" />
         </LinearLayout>
 
@@ -902,7 +911,7 @@
                     android:layout_marginStart="8dp"
                     android:letterSpacing="0.12"
                     android:text="@string/card_loop"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -930,7 +939,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="@string/loop_one_sub"
-                    android:textColor="@color/text_faint"
+                    android:textColor="?attr/vlTextFaint"
                     android:textSize="11sp" />
             </LinearLayout>
 
@@ -958,7 +967,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="@string/loop_all_sub"
-                    android:textColor="@color/text_faint"
+                    android:textColor="?attr/vlTextFaint"
                     android:textSize="11sp" />
             </LinearLayout>
         </LinearLayout>
@@ -990,7 +999,7 @@
                     android:layout_marginStart="8dp"
                     android:letterSpacing="0.12"
                     android:text="@string/card_framing"
-                    android:textColor="@color/text_secondary"
+                    android:textColor="?attr/vlTextSecondary"
                     android:textSize="12sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -1036,7 +1045,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="@string/frame_hint"
-                android:textColor="@color/text_faint"
+                android:textColor="?attr/vlTextFaint"
                 android:textSize="11sp" />
 
             <LinearLayout
@@ -1050,7 +1059,7 @@
                     android:layout_width="56dp"
                     android:layout_height="wrap_content"
                     android:text="@string/label_zoom"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="13sp" />
 
                 <SeekBar
@@ -1061,8 +1070,8 @@
                     android:layout_weight="1"
                     android:max="200"
                     android:progress="0"
-                    android:progressTint="@color/primary"
-                    android:thumbTint="@color/primary" />
+                    android:progressTint="?attr/vlAccent"
+                    android:thumbTint="?attr/vlAccent" />
 
                 <TextView
                     android:id="@+id/txtZoom"
@@ -1070,7 +1079,7 @@
                     android:layout_height="wrap_content"
                     android:gravity="end"
                     android:text="100%"
-                    android:textColor="@color/cyan"
+                    android:textColor="?attr/vlAccent"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -1086,7 +1095,7 @@
                     android:layout_width="56dp"
                     android:layout_height="wrap_content"
                     android:text="@string/label_pan_x"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="13sp" />
 
                 <SeekBar
@@ -1097,8 +1106,8 @@
                     android:layout_weight="1"
                     android:max="200"
                     android:progress="100"
-                    android:progressTint="@color/primary"
-                    android:thumbTint="@color/primary" />
+                    android:progressTint="?attr/vlAccent"
+                    android:thumbTint="?attr/vlAccent" />
 
                 <TextView
                     android:id="@+id/txtPanX"
@@ -1106,7 +1115,7 @@
                     android:layout_height="wrap_content"
                     android:gravity="end"
                     android:text="0"
-                    android:textColor="@color/cyan"
+                    android:textColor="?attr/vlAccent"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -1122,7 +1131,7 @@
                     android:layout_width="56dp"
                     android:layout_height="wrap_content"
                     android:text="@string/label_pan_y"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="13sp" />
 
                 <SeekBar
@@ -1133,8 +1142,8 @@
                     android:layout_weight="1"
                     android:max="200"
                     android:progress="100"
-                    android:progressTint="@color/primary"
-                    android:thumbTint="@color/primary" />
+                    android:progressTint="?attr/vlAccent"
+                    android:thumbTint="?attr/vlAccent" />
 
                 <TextView
                     android:id="@+id/txtPanY"
@@ -1142,7 +1151,7 @@
                     android:layout_height="wrap_content"
                     android:gravity="end"
                     android:text="0"
-                    android:textColor="@color/cyan"
+                    android:textColor="?attr/vlAccent"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -1159,7 +1168,7 @@
                 android:paddingEnd="16dp"
                 android:paddingBottom="8dp"
                 android:text="@string/reset_framing"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/vlTextPrimary"
                 android:textSize="12.5sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -1180,7 +1189,7 @@
                 android:background="@drawable/bg_button_secondary"
                 android:gravity="center"
                 android:text="@string/btn_playlist"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/vlTextPrimary"
                 android:textSize="13.5sp"
                 android:textStyle="bold" />
 
@@ -1193,7 +1202,7 @@
                 android:background="@drawable/bg_button_secondary"
                 android:gravity="center"
                 android:text="@string/btn_destinations"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/vlTextPrimary"
                 android:textSize="13.5sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -1207,7 +1216,7 @@
             android:background="@drawable/bg_button_live"
             android:gravity="center"
             android:text="@string/start_live"
-            android:textColor="#FFFFFF"
+            android:textColor="?attr/vlOnAccent"
             android:textSize="17sp"
             android:textStyle="bold" />
 
@@ -1218,7 +1227,7 @@
             android:layout_marginBottom="8dp"
             android:gravity="center"
             android:text="H.264 + AAC → FLV → RTMP/RTMPS • FFmpeg engine"
-            android:textColor="@color/text_faint"
+            android:textColor="?attr/vlTextFaint"
             android:textSize="11sp" />
     </LinearLayout>
 </ScrollView>

@@ -1,25 +1,161 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+
+    <!-- Base: every surface/text/accent reads from the themeable attrs so
+         the 7 selectable themes restyle the entire app consistently. -->
     <style name="Theme.VideoLive" parent="Theme.MaterialComponents.NoActionBar">
-        <item name="colorPrimary">@color/primary</item>
-        <item name="colorPrimaryDark">@color/bg_top</item>
-        <item name="colorSecondary">@color/cyan</item>
-        <item name="colorAccent">@color/primary</item>
+        <item name="colorPrimary">?attr/vlAccent</item>
+        <item name="colorPrimaryDark">?attr/vlBgTop</item>
+        <item name="colorSecondary">?attr/vlAccentSoft</item>
+        <item name="colorAccent">?attr/vlAccent</item>
         <item name="android:windowBackground">@drawable/bg_window</item>
-        <item name="android:statusBarColor">@color/bg_top</item>
-        <item name="android:navigationBarColor">@color/bg_bottom</item>
-        <item name="android:textColorPrimary">@color/text_primary</item>
-        <item name="android:textColorSecondary">@color/text_secondary</item>
-        <item name="android:colorControlActivated">@color/primary</item>
-        <item name="android:colorControlHighlight">#335B8CFF</item>
+        <item name="android:statusBarColor">?attr/vlBgTop</item>
+        <item name="android:navigationBarColor">?attr/vlBgBottom</item>
+        <item name="android:textColorPrimary">?attr/vlTextPrimary</item>
+        <item name="android:textColorSecondary">?attr/vlTextSecondary</item>
+        <item name="android:colorControlActivated">?attr/vlAccent</item>
+        <item name="android:colorEdgeEffect">?attr/vlAccent</item>
         <item name="materialAlertDialogTheme">@style/Theme.VideoLive.Dialog</item>
     </style>
 
     <style name="Theme.VideoLive.Dialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
-        <item name="android:background">@color/card_bg</item>
-        <item name="colorPrimary">@color/primary</item>
-        <item name="colorSecondary">@color/cyan</item>
-        <item name="android:textColorPrimary">@color/text_primary</item>
-        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:background">?attr/vlCard</item>
+        <item name="colorPrimary">?attr/vlAccent</item>
+        <item name="colorSecondary">?attr/vlAccentSoft</item>
+        <item name="android:textColorPrimary">?attr/vlTextPrimary</item>
+        <item name="android:textColorSecondary">?attr/vlTextSecondary</item>
+    </style>
+
+    <!-- 1 · Graphite (signature studio look) -->
+    <style name="Theme.VideoLive.Graphite" parent="Theme.VideoLive">
+        <item name="vlBgTop">#0A0F1F</item>
+        <item name="vlBgBottom">#0C1226</item>
+        <item name="vlCard">#141B33</item>
+        <item name="vlStroke">#24304F</item>
+        <item name="vlInputBg">#0E1529</item>
+        <item name="vlInputStroke">#2A3760</item>
+        <item name="vlTextPrimary">#F2F5FF</item>
+        <item name="vlTextSecondary">#98A2C4</item>
+        <item name="vlTextFaint">#5E6A8F</item>
+        <item name="vlAccent">#5B8CFF</item>
+        <item name="vlAccentSoft">#2AD4C8</item>
+        <item name="vlChipBg">#1B2444</item>
+        <item name="vlOptionSelected">#1D2A55</item>
+        <item name="vlPreviewBg">#05080F</item>
+        <item name="vlOnAccent">#FFFFFF</item>
+    </style>
+
+    <!-- 2 · Pure Black -->
+    <style name="Theme.VideoLive.Black" parent="Theme.VideoLive">
+        <item name="vlBgTop">#000000</item>
+        <item name="vlBgBottom">#050507</item>
+        <item name="vlCard">#101014</item>
+        <item name="vlStroke">#26262E</item>
+        <item name="vlInputBg">#0A0A0E</item>
+        <item name="vlInputStroke">#2E2E38</item>
+        <item name="vlTextPrimary">#FAFAFC</item>
+        <item name="vlTextSecondary">#A2A2AE</item>
+        <item name="vlTextFaint">#63636D</item>
+        <item name="vlAccent">#E8EAED</item>
+        <item name="vlAccentSoft">#8AB4FF</item>
+        <item name="vlChipBg">#17171C</item>
+        <item name="vlOptionSelected">#1D1D26</item>
+        <item name="vlPreviewBg">#000000</item>
+        <item name="vlOnAccent">#0A0A0E</item>
+    </style>
+
+    <!-- 3 · Clean White -->
+    <style name="Theme.VideoLive.White" parent="Theme.VideoLive">
+        <item name="vlBgTop">#FAFBFD</item>
+        <item name="vlBgBottom">#F1F3F8</item>
+        <item name="vlCard">#FFFFFF</item>
+        <item name="vlStroke">#E3E7EF</item>
+        <item name="vlInputBg">#F5F7FA</item>
+        <item name="vlInputStroke">#D8DEE9</item>
+        <item name="vlTextPrimary">#12151F</item>
+        <item name="vlTextSecondary">#5A6478</item>
+        <item name="vlTextFaint">#9AA2B4</item>
+        <item name="vlAccent">#2456E6</item>
+        <item name="vlAccentSoft">#0E9C92</item>
+        <item name="vlChipBg">#EEF1F7</item>
+        <item name="vlOptionSelected">#E4EBFB</item>
+        <item name="vlPreviewBg">#0B0D12</item>
+        <item name="vlOnAccent">#FFFFFF</item>
+    </style>
+
+    <!-- 4 · Midnight Blue -->
+    <style name="Theme.VideoLive.Midnight" parent="Theme.VideoLive">
+        <item name="vlBgTop">#060B1E</item>
+        <item name="vlBgBottom">#0A1230</item>
+        <item name="vlCard">#0E1836</item>
+        <item name="vlStroke">#1F2C55</item>
+        <item name="vlInputBg">#0A1128</item>
+        <item name="vlInputStroke">#27356B</item>
+        <item name="vlTextPrimary">#EFF3FF</item>
+        <item name="vlTextSecondary">#93A0CC</item>
+        <item name="vlTextFaint">#56618C</item>
+        <item name="vlAccent">#6EA8FF</item>
+        <item name="vlAccentSoft">#8F7BFF</item>
+        <item name="vlChipBg">#14204A</item>
+        <item name="vlOptionSelected">#182757</item>
+        <item name="vlPreviewBg">#040817</item>
+        <item name="vlOnAccent">#071022</item>
+    </style>
+
+    <!-- 5 · Emerald -->
+    <style name="Theme.VideoLive.Emerald" parent="Theme.VideoLive">
+        <item name="vlBgTop">#07120D</item>
+        <item name="vlBgBottom">#0A1811</item>
+        <item name="vlCard">#0E211A</item>
+        <item name="vlStroke">#1E3A2E</item>
+        <item name="vlInputBg">#0A1913</item>
+        <item name="vlInputStroke">#265040</item>
+        <item name="vlTextPrimary">#F0FBF6</item>
+        <item name="vlTextSecondary">#93B8A8</item>
+        <item name="vlTextFaint">#547263</item>
+        <item name="vlAccent">#34D399</item>
+        <item name="vlAccentSoft">#2AD4C8</item>
+        <item name="vlChipBg">#123128</item>
+        <item name="vlOptionSelected">#164033</item>
+        <item name="vlPreviewBg">#04100B</item>
+        <item name="vlOnAccent">#062018</item>
+    </style>
+
+    <!-- 6 · Violet -->
+    <style name="Theme.VideoLive.Violet" parent="Theme.VideoLive">
+        <item name="vlBgTop">#0E0A1E</item>
+        <item name="vlBgBottom">#140E2C</item>
+        <item name="vlCard">#1A1338</item>
+        <item name="vlStroke">#2E2458</item>
+        <item name="vlInputBg">#150F2E</item>
+        <item name="vlInputStroke">#3A2D70</item>
+        <item name="vlTextPrimary">#F6F2FF</item>
+        <item name="vlTextSecondary">#A79BC8</item>
+        <item name="vlTextFaint">#665B8C</item>
+        <item name="vlAccent">#8F7BFF</item>
+        <item name="vlAccentSoft">#C084FC</item>
+        <item name="vlChipBg">#241A4D</item>
+        <item name="vlOptionSelected">#2C2060</item>
+        <item name="vlPreviewBg">#0A0718</item>
+        <item name="vlOnAccent">#FFFFFF</item>
+    </style>
+
+    <!-- 7 · Cyan -->
+    <style name="Theme.VideoLive.Cyan" parent="Theme.VideoLive">
+        <item name="vlBgTop">#04121A</item>
+        <item name="vlBgBottom">#061824</item>
+        <item name="vlCard">#0A2230</item>
+        <item name="vlStroke">#164054</item>
+        <item name="vlInputBg">#071B26</item>
+        <item name="vlInputStroke">#1E546C</item>
+        <item name="vlTextPrimary">#EFFBFF</item>
+        <item name="vlTextSecondary">#8FB4C4</item>
+        <item name="vlTextFaint">#4F7284</item>
+        <item name="vlAccent">#22D3EE</item>
+        <item name="vlAccentSoft">#5B8CFF</item>
+        <item name="vlChipBg">#0D2C3D</item>
+        <item name="vlOptionSelected">#113A50</item>
+        <item name="vlPreviewBg">#030E14</item>
+        <item name="vlOnAccent">#062028</item>
     </style>
 </resources>

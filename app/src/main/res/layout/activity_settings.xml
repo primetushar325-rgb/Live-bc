@@ -30,7 +30,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"
                 android:text="@string/settings_title"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/vlTextPrimary"
                 android:textSize="20sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -49,7 +49,7 @@
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
                 android:text="BACKGROUND STREAMING"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
@@ -58,7 +58,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="Streaming runs in a foreground service with a persistent notification, so it continues while the screen is locked or another app is open. For reliable long streams, allow unrestricted battery usage for this app."
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="13sp" />
 
             <TextView
@@ -78,7 +78,7 @@
                 android:background="@drawable/bg_button_secondary"
                 android:gravity="center"
                 android:text="Disable battery optimization"
-                android:textColor="@color/primary"
+                android:textColor="?attr/vlAccent"
                 android:textSize="13.5sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -97,7 +97,7 @@
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
                 android:text="STREAMING ENGINE"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
@@ -106,7 +106,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="13sp" />
 
             <TextView
@@ -114,7 +114,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="The engine decodes your video, re-encodes it as H.264 + AAC and streams FLV over RTMP/RTMPS. The video loops inside a single FFmpeg session, so the RTMP connection to YouTube is never reconnected at the loop point and timestamps stay continuous."
-                android:textColor="@color/text_faint"
+                android:textColor="?attr/vlTextFaint"
                 android:textSize="12sp" />
         </LinearLayout>
 
@@ -132,7 +132,7 @@
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
                 android:text="STREAM KEY SECURITY"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
@@ -141,7 +141,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="Your stream key is stored encrypted on this device (Android Keystore). It is never logged, never shown in notifications and never sent anywhere except YouTube's RTMP server."
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="13sp" />
         </LinearLayout>
 
@@ -159,7 +159,7 @@
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
                 android:text="@string/settings_thermal_title"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
@@ -175,7 +175,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/thermal_warn_label"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="13.5sp" />
 
                 <SeekBar
@@ -210,7 +210,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/thermal_stop_label"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="13.5sp" />
 
                 <SeekBar
@@ -238,7 +238,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:text="@string/thermal_hint"
-                android:textColor="@color/text_faint"
+                android:textColor="?attr/vlTextFaint"
                 android:textSize="11.5sp" />
         </LinearLayout>
 
@@ -256,7 +256,7 @@
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
                 android:text="@string/settings_playlist_title"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
@@ -272,7 +272,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/settings_playlist_switch"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="13.5sp" />
 
                 <androidx.appcompat.widget.SwitchCompat
@@ -286,7 +286,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="Playlist mode streams several videos in one continuous session. Turn this OFF to always stream only the single selected video."
-                android:textColor="@color/text_faint"
+                android:textColor="?attr/vlTextFaint"
                 android:textSize="11.5sp" />
         </LinearLayout>
 
@@ -299,7 +299,7 @@
             android:background="@drawable/bg_button_secondary"
             android:gravity="center"
             android:text="Open Advanced Logs"
-            android:textColor="@color/primary"
+            android:textColor="?attr/vlAccent"
             android:textSize="14sp"
             android:textStyle="bold" />
 
@@ -310,7 +310,7 @@
             android:layout_marginTop="18dp"
             android:gravity="center"
                 android:text="LIVE VIP 3.0 — local video to YouTube Live streaming"
-            android:textColor="@color/text_faint"
+            android:textColor="?attr/vlTextFaint"
             android:textSize="11.5sp" />
     </LinearLayout>
 </ScrollView>

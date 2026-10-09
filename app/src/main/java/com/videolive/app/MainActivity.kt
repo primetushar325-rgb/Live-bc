@@ -26,6 +26,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -33,6 +34,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.videolive.app.data.PlaylistRepository
 import com.videolive.app.data.SecurePrefs
 import com.videolive.app.data.SettingsRepository
+import com.videolive.app.data.ThemeStore
 import com.videolive.app.data.VideoRepository
 import com.videolive.app.ffmpeg.FFmpegCommandBuilder
 import com.videolive.app.ffmpeg.FFmpegRuntime
@@ -138,6 +140,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
         setContentView(R.layout.activity_main)
         settingsRepo = SettingsRepository(this)
 
@@ -201,6 +204,7 @@ class MainActivity : AppCompatActivity() {
         wireEvents()
         restoreSettings()
         applyPreviewAspect()
+        findViewById<ImageButton>(R.id.btnTheme).setOnClickListener { openThemePicker() }
         // Warm up the streaming engine in the background: loads the native
         // FFmpeg libraries and runs the -version execution test so the result
         // (and the real reason if it fails) is in Advanced Logs immediately.
@@ -484,6 +488,26 @@ class MainActivity : AppCompatActivity() {
         val py = settingsRepo.panYPct.coerceIn(-100, 100)
         seekPanY.progress = py + 100
         txtPanY.text = "$py"
+    }
+
+    private fun openThemePicker() {
+        val themes = ThemeStore.Theme.values()
+        val current = ThemeStore.current(this)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.theme_title)
+            .setSingleChoiceItems(
+                themes.map { it.label }.toTypedArray(),
+                themes.indexOf(current)
+            ) { dialog, which ->
+                val picked = themes[which]
+                dialog.dismiss()
+                if (picked != current) {
+                    ThemeStore.save(this, picked)
+                    recreate()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     /** Summary line under the Playlist Mode card. */

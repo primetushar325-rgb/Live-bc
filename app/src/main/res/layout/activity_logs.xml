@@ -25,7 +25,7 @@
             android:layout_marginStart="12dp"
             android:layout_weight="1"
             android:text="@string/logs_title"
-            android:textColor="@color/text_primary"
+            android:textColor="?attr/vlTextPrimary"
             android:textSize="20sp"
             android:textStyle="bold" />
 
@@ -38,7 +38,7 @@
             android:paddingStart="14dp"
             android:paddingEnd="14dp"
             android:text="@string/copy_logs"
-            android:textColor="@color/primary"
+            android:textColor="?attr/vlAccent"
             android:textSize="13.5sp"
             android:textStyle="bold" />
 
@@ -52,7 +52,7 @@
             android:paddingStart="14dp"
             android:paddingEnd="14dp"
             android:text="@string/share_logs"
-            android:textColor="@color/primary"
+            android:textColor="?attr/vlAccent"
             android:textSize="13.5sp"
             android:textStyle="bold" />
 
@@ -76,7 +76,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
         android:text="@string/logs_note"
-        android:textColor="@color/text_faint"
+        android:textColor="?attr/vlTextFaint"
         android:textSize="11.5sp" />
 
     <ScrollView

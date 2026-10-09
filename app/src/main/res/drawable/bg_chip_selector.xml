@@ -4,16 +4,16 @@
         <shape>
             <gradient
                 android:angle="0"
-                android:startColor="@color/primary"
-                android:endColor="@color/purple" />
-            <corners android:radius="999dp" />
+                android:startColor="?attr/vlAccent"
+                android:endColor="?attr/vlAccentSoft" />
+            <corners android:radius="10dp" />
         </shape>
     </item>
     <item>
         <shape>
-            <solid android:color="@color/chip_bg" />
-            <stroke android:width="1dp" android:color="@color/input_stroke" />
-            <corners android:radius="999dp" />
+            <solid android:color="?attr/vlChipBg" />
+            <stroke android:width="1dp" android:color="?attr/vlInputStroke" />
+            <corners android:radius="10dp" />
         </shape>
     </item>
 </selector>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Themeable surface colors. Every layout/drawable references these
+         instead of fixed @color values so the theme selector can restyle the
+         whole app consistently. -->
+    <attr name="vlBgTop" format="color" />
+    <attr name="vlBgBottom" format="color" />
+    <attr name="vlCard" format="color" />
+    <attr name="vlStroke" format="color" />
+    <attr name="vlInputBg" format="color" />
+    <attr name="vlInputStroke" format="color" />
+    <attr name="vlTextPrimary" format="color" />
+    <attr name="vlTextSecondary" format="color" />
+    <attr name="vlTextFaint" format="color" />
+    <attr name="vlAccent" format="color" />
+    <attr name="vlAccentSoft" format="color" />
+    <attr name="vlChipBg" format="color" />
+    <attr name="vlOptionSelected" format="color" />
+    <attr name="vlPreviewBg" format="color" />
+    <attr name="vlOnAccent" format="color" />
+</resources>

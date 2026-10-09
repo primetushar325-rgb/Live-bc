@@ -9,6 +9,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -52,6 +53,7 @@ class DestinationsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
         setContentView(R.layout.activity_destinations)
         settingsRepo = SettingsRepository(this)
 
@@ -102,7 +104,7 @@ class DestinationsActivity : AppCompatActivity() {
         val label = TextView(this).apply {
             text = "DESTINATION ${rows.size + 1}"
             textSize = 12f
-            setTextColor(ContextCompat.getColor(this@DestinationsActivity, R.color.text_secondary))
+            setTextColor(ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextSecondary))
             setTypeface(null, android.graphics.Typeface.BOLD)
             letterSpacing = 0.12f
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -138,7 +140,7 @@ class DestinationsActivity : AppCompatActivity() {
 
         val txtStatus = TextView(this).apply {
             textSize = 12f
-            setTextColor(ContextCompat.getColor(this@DestinationsActivity, R.color.text_faint))
+            setTextColor(ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextFaint))
         }
 
         // Action row: TEST / SET ACTIVE.
@@ -150,7 +152,7 @@ class DestinationsActivity : AppCompatActivity() {
             text = getString(R.string.destination_test)
             textSize = 12.5f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(ContextCompat.getColor(this@DestinationsActivity, R.color.text_primary))
+            setTextColor(ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextPrimary))
             setBackgroundResource(R.drawable.bg_button_secondary)
             setPadding(dp(18), dp(10), dp(18), dp(10))
         }
@@ -159,10 +161,8 @@ class DestinationsActivity : AppCompatActivity() {
             textSize = 12.5f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(
-                ContextCompat.getColor(
-                    this@DestinationsActivity,
-                    if (isActive) R.color.green else R.color.text_secondary
-                )
+                if (isActive) ContextCompat.getColor(this@DestinationsActivity, R.color.green)
+                else ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextSecondary)
             )
             setBackgroundResource(
                 if (isActive) R.drawable.bg_chip_selector else R.drawable.bg_button_secondary
@@ -217,8 +217,8 @@ class DestinationsActivity : AppCompatActivity() {
             this.hint = hint
             setText(value)
             textSize = 13.5f
-            setTextColor(ContextCompat.getColor(this@DestinationsActivity, R.color.text_primary))
-            setHintTextColor(ContextCompat.getColor(this@DestinationsActivity, R.color.text_faint))
+            setTextColor(ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextPrimary))
+            setHintTextColor(ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextFaint))
             setBackgroundResource(R.drawable.bg_input)
             setPadding(dp(12), dp(12), dp(12), dp(12))
             maxLines = 1
@@ -240,7 +240,7 @@ class DestinationsActivity : AppCompatActivity() {
             return
         }
         row.txtStatus.text = "Testing server..."
-        row.txtStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+        row.txtStatus.setTextColor(ThemeEngine.color(this, R.attr.vlTextSecondary))
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) { RtmpProbe.probe(server) }
             row.txtStatus.text = if (result.success) {
@@ -288,10 +288,8 @@ class DestinationsActivity : AppCompatActivity() {
             r.btnActive.text = if (active) "● ACTIVE" else getString(R.string.destination_active)
             r.btnActive.isSelected = active
             r.btnActive.setTextColor(
-                ContextCompat.getColor(
-                    this,
-                    if (active) R.color.green else R.color.text_secondary
-                )
+                if (active) ContextCompat.getColor(this, R.color.green)
+                else ThemeEngine.color(this, R.attr.vlTextSecondary)
             )
         }
         toast("Active destination set — streaming will use it.")

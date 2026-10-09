@@ -12,6 +12,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
 import com.videolive.app.ffmpeg.LogStore
 
 class LogsActivity : AppCompatActivity() {
@@ -32,6 +33,7 @@ class LogsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
         setContentView(R.layout.activity_logs)
 
         txtLogs = findViewById(R.id.txtLogs)

@@ -31,7 +31,7 @@
                 android:layout_marginStart="12dp"
                 android:layout_weight="1"
                 android:text="@string/playlist_title"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/vlTextPrimary"
                 android:textSize="20sp"
                 android:textStyle="bold" />
 
@@ -45,7 +45,7 @@
                 android:paddingEnd="14dp"
                 android:paddingBottom="8dp"
                 android:text="@string/playlist_clear"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/vlTextPrimary"
                 android:textSize="11.5sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -55,7 +55,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             android:text="@string/playlist_mismatch"
-            android:textColor="@color/text_faint"
+            android:textColor="?attr/vlTextFaint"
             android:textSize="11.5sp" />
 
         <!-- Items -->
@@ -72,7 +72,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/playlist_empty"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="13sp" />
 
             <LinearLayout
@@ -89,7 +89,7 @@
                 android:background="@drawable/bg_button_secondary"
                 android:gravity="center"
                 android:text="@string/playlist_add"
-                android:textColor="@color/text_primary"
+                android:textColor="?attr/vlTextPrimary"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -98,7 +98,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:textColor="@color/cyan"
+                android:textColor="?attr/vlAccent"
                 android:textSize="12sp"
                 android:visibility="gone" />
         </LinearLayout>
@@ -117,7 +117,7 @@
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
                 android:text="@string/playlist_loop_mode"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
@@ -131,27 +131,27 @@
                     android:id="@+id/rbLoopAll"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:buttonTint="@color/cyan"
+                    android:buttonTint="?attr/vlAccent"
                     android:text="@string/loop_mode_all"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="13.5sp" />
 
                 <RadioButton
                     android:id="@+id/rbSequential"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:buttonTint="@color/cyan"
+                    android:buttonTint="?attr/vlAccent"
                     android:text="@string/loop_mode_sequential"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="13.5sp" />
 
                 <RadioButton
                     android:id="@+id/rbShuffle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:buttonTint="@color/cyan"
+                    android:buttonTint="?attr/vlAccent"
                     android:text="@string/loop_mode_shuffle"
-                    android:textColor="@color/text_primary"
+                    android:textColor="?attr/vlTextPrimary"
                     android:textSize="13.5sp" />
             </RadioGroup>
 
@@ -161,7 +161,7 @@
                 android:layout_marginTop="14dp"
                 android:letterSpacing="0.12"
                 android:text="@string/playlist_duration"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
@@ -177,7 +177,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:textColor="@color/text_secondary"
+                android:textColor="?attr/vlTextSecondary"
                 android:textSize="12.5sp" />
         </LinearLayout>
 
@@ -189,7 +189,7 @@
             android:background="@drawable/bg_button_live"
             android:gravity="center"
             android:text="@string/playlist_save"
-            android:textColor="#FFFFFF"
+            android:textColor="?attr/vlOnAccent"
             android:textSize="16sp"
             android:textStyle="bold" />
     </LinearLayout>

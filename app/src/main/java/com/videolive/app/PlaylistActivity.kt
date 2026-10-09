@@ -13,6 +13,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.videolive.app.data.PlaylistRepository
@@ -54,6 +55,7 @@ class PlaylistActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
         setContentView(R.layout.activity_playlist)
 
         listContainer = findViewById(R.id.listPlaylist)
@@ -216,7 +218,7 @@ class PlaylistActivity : AppCompatActivity() {
             val number = TextView(this).apply {
                 text = "${index + 1}"
                 textSize = 14f
-                setTextColor(ContextCompat.getColor(this@PlaylistActivity, R.color.cyan))
+                setTextColor(ThemeEngine.color(this@PlaylistActivity, R.attr.vlAccent))
                 setTypeface(null, android.graphics.Typeface.BOLD)
             }
 
@@ -231,14 +233,14 @@ class PlaylistActivity : AppCompatActivity() {
                 textSize = 13.5f
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-                setTextColor(ContextCompat.getColor(this@PlaylistActivity, R.color.text_primary))
+                setTextColor(ThemeEngine.color(this@PlaylistActivity, R.attr.vlTextPrimary))
             }
             val meta = TextView(this).apply {
                 val mins = if (item.durationMs > 0) " • ${item.durationMs / 60000} min" else ""
                 val res = if (item.width > 0) " • ${item.width}x${item.height}" else ""
                 text = "${formatSize(item.sizeBytes)}$res$mins"
                 textSize = 11f
-                setTextColor(ContextCompat.getColor(this@PlaylistActivity, R.color.text_faint))
+                setTextColor(ThemeEngine.color(this@PlaylistActivity, R.attr.vlTextFaint))
             }
             textBlock.addView(name)
             textBlock.addView(meta)
@@ -262,7 +264,7 @@ class PlaylistActivity : AppCompatActivity() {
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, 1
                     )
-                    setBackgroundColor(ContextCompat.getColor(this@PlaylistActivity, R.color.card_stroke))
+                    setBackgroundColor(ThemeEngine.color(this@PlaylistActivity, R.attr.vlStroke))
                 }
                 listContainer.addView(divider)
             }
@@ -286,7 +288,7 @@ class PlaylistActivity : AppCompatActivity() {
         return TextView(this).apply {
             text = label
             textSize = 13f
-            setTextColor(ContextCompat.getColor(this@PlaylistActivity, R.color.text_secondary))
+            setTextColor(ThemeEngine.color(this@PlaylistActivity, R.attr.vlTextSecondary))
             setBackgroundResource(R.drawable.bg_button_secondary)
             setPadding(dp(12), dp(8), dp(12), dp(8))
             val lp = LinearLayout.LayoutParams(

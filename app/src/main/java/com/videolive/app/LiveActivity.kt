@@ -8,6 +8,7 @@ import android.view.View
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -18,6 +19,7 @@ import com.videolive.app.stream.Phase
 import com.videolive.app.stream.StreamService
 import com.videolive.app.stream.StreamUiState
 import com.videolive.app.util.Texts
+import com.videolive.app.util.ThemeEngine
 import kotlinx.coroutines.launch
 
 class LiveActivity : AppCompatActivity() {
@@ -49,6 +51,7 @@ class LiveActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
         setContentView(R.layout.activity_live)
 
         txtElapsed = findViewById(R.id.txtElapsed)
@@ -95,10 +98,8 @@ class LiveActivity : AppCompatActivity() {
         txtElapsed.text = Texts.formatClock(state.elapsedMs)
         txtStatus.text = state.statusText
         txtStatus.setTextColor(
-            ContextCompat.getColor(
-                this,
-                if (state.phase == Phase.ERROR) R.color.red else R.color.cyan
-            )
+            if (state.phase == Phase.ERROR) ContextCompat.getColor(this, R.color.red)
+            else ThemeEngine.color(this, R.attr.vlAccent)
         )
 
         txtVideoName.text = state.videoName.ifEmpty { "—" }
@@ -146,7 +147,7 @@ class LiveActivity : AppCompatActivity() {
             }
             else -> {
                 txtConnection.text = "—"
-                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                txtConnection.setTextColor(ThemeEngine.color(this, R.attr.vlTextSecondary))
             }
         }
 
