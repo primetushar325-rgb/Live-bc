@@ -168,6 +168,13 @@ class StreamService : Service() {
     // Transport health: output bytes must grow while frames are encoded.
     // Frames advancing with frozen byte counter = RTMPS writes blocked.
     private var prevBytes = -1L
+
+    // Long-duration latency drift: wall-clock elapsed minus encoded out_time.
+    // If this grows, encode/transport runs slightly under real time — the
+    // classic cause of "fine at first, laggy after ~1 hour" streams.
+    private var attemptWallStartMs = 0L
+    private var driftWarned = false
+    private var driftCritical = false
     private var prevBytesFrames = 0L
     private var transportStallStreak = 0
 
@@ -536,6 +543,9 @@ class StreamService : Service() {
                 prevBytes = -1L
                 prevBytesFrames = 0L
                 transportStallStreak = 0
+                attemptWallStartMs = 0L
+                driftWarned = false
+                driftCritical = false
                 var statsSeen = 0
                 var inputLogged = false
                 var encoderLogged = false
@@ -622,9 +632,43 @@ class StreamService : Service() {
                     prevBytes = outBytes
                     prevBytesFrames = statFrames
 
+                    // Cumulative latency drift — the long-duration lag signal.
+                    // A healthy real-time pipeline keeps out_time close to
+                    // wall-clock elapsed; growing drift means encode or
+                    // transport is under real time and stutter/latency will
+                    // only get worse the longer the session runs.
+                    val driftSec: Double = if (attemptWallStartMs == 0L) {
+                        attemptWallStartMs = System.currentTimeMillis()
+                        0.0
+                    } else {
+                        ((System.currentTimeMillis() - attemptWallStartMs) - statTimeMs) / 1000.0
+                    }
+                    if (driftSec >= 15.0 && !driftWarned) {
+                        driftWarned = true
+                        LogStore.event(
+                            "LATENCY DRIFT growing: output ${String.format(Locale.US, "%.0f", driftSec)}s " +
+                                "behind real time — encode/transport slightly under 1.0x; " +
+                                "long sessions from here will progressively degrade"
+                        )
+                    }
+                    if (driftSec >= 45.0 && !driftCritical) {
+                        driftCritical = true
+                        post { s ->
+                            s.copy(
+                                perfWarning = "Stream falling behind real time — stop and restart " +
+                                    "at 480p or lower FPS for long sessions."
+                            )
+                        }
+                        LogStore.event(
+                            "LATENCY DRIFT severe: ${String.format(Locale.US, "%.0f", driftSec)}s behind " +
+                                "real time. Continuing will keep increasing latency/stutter. " +
+                                "Recommendation: stop now, lower quality (480p) or FPS, restart."
+                        )
+                    }
+
                     val healthLabel = when {
                         transportStallStreak >= 2 -> "Transport stalled"
-                        overloadWarned ||
+                        driftCritical || overloadWarned ||
                             (measuredFps > 0f && measuredFps < config.fps * 0.8f) ->
                             "Performance warning"
                         else -> "Healthy"
@@ -745,6 +789,7 @@ class StreamService : Service() {
                                     "${String.format(Locale.US, "%.2f", st.speed)}x | " +
                                     "net=${if (netOk) "OK" else "POOR"} | reconnects=$attempt | " +
                                     "temp=${String.format(Locale.US, "%.1f", deviceTempC)}C | " +
+                                    "drift=${String.format(Locale.US, "%.0f", driftSec)}s | " +
                                     "frame #${st.videoFrameNumber}, out_time ${st.time} ms, " +
                                     "total ${st.size} bytes, loop ${loops + 1}"
                             )
