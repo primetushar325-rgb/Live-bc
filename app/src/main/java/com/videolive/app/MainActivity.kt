@@ -19,12 +19,11 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.MediaController
+import android.view.TextureView
 import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
-import android.widget.VideoView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
@@ -38,6 +37,7 @@ import com.videolive.app.data.VideoRepository
 import com.videolive.app.ffmpeg.FFmpegCommandBuilder
 import com.videolive.app.ffmpeg.FFmpegRuntime
 import com.videolive.app.media.LoadedVideo
+import com.videolive.app.media.TexturePreview
 import com.videolive.app.media.VideoInputException
 import com.videolive.app.media.VideoLoader
 import com.videolive.app.model.BitrateMode
@@ -72,7 +72,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var batteryWarning: TextView
     private lateinit var liveBanner: TextView
     private lateinit var previewFrame: FrameLayout
-    private lateinit var previewVideo: VideoView
+    private lateinit var previewTexture: TextureView
+    private lateinit var preview: TexturePreview
     private lateinit var previewThumb: ImageView
     private lateinit var emptyPreview: LinearLayout
     private lateinit var previewStatus: TextView
@@ -143,7 +144,14 @@ class MainActivity : AppCompatActivity() {
         batteryWarning = findViewById(R.id.batteryWarning)
         liveBanner = findViewById(R.id.liveBanner)
         previewFrame = findViewById(R.id.previewFrame)
-        previewVideo = findViewById(R.id.previewVideo)
+        previewTexture = findViewById(R.id.previewTexture)
+        preview = TexturePreview(previewTexture).apply {
+            onEnded = { stopPreview() }
+            onFailed = {
+                toast("Preview not available for this video.")
+                stopPreview()
+            }
+        }
         previewThumb = findViewById(R.id.previewThumb)
         emptyPreview = findViewById(R.id.emptyPreview)
         previewStatus = findViewById(R.id.previewStatus)
@@ -192,6 +200,7 @@ class MainActivity : AppCompatActivity() {
 
         wireEvents()
         restoreSettings()
+        applyPreviewAspect()
         // Warm up the streaming engine in the background: loads the native
         // FFmpeg libraries and runs the -version execution test so the result
         // (and the real reason if it fails) is in Advanced Logs immediately.
@@ -222,7 +231,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        if (previewVideo.visibility == View.VISIBLE) {
+        if (previewTexture.visibility == View.VISIBLE) {
             stopPreview()
         }
     }
@@ -243,7 +252,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         previewThumb.setOnClickListener { startPreview() }
-        previewVideo.setOnCompletionListener { stopPreview() }
 
         switchFullUrl.setOnCheckedChangeListener { _, checked ->
             settingsRepo.fullUrlMode = checked
@@ -350,6 +358,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun onStopTrackingTouch(sb: SeekBar?) {
                 settingsRepo.zoomPct = (sb?.progress ?: 0) + 100
+                preview.framing = currentFraming()
+                preview.refreshMatrix()
             }
         })
         seekPanX.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -361,6 +371,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun onStopTrackingTouch(sb: SeekBar?) {
                 settingsRepo.panXPct = (sb?.progress ?: 100) - 100
+                preview.framing = currentFraming()
+                preview.refreshMatrix()
             }
         })
         seekPanY.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -372,6 +384,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun onStopTrackingTouch(sb: SeekBar?) {
                 settingsRepo.panYPct = (sb?.progress ?: 100) - 100
+                preview.framing = currentFraming()
+                preview.refreshMatrix()
             }
         })
         findViewById<TextView>(R.id.btnResetFraming).setOnClickListener {
@@ -380,6 +394,8 @@ class MainActivity : AppCompatActivity() {
             settingsRepo.panXPct = 0
             settingsRepo.panYPct = 0
             renderFramingControls()
+            preview.framing = currentFraming()
+            preview.refreshMatrix()
             toast("Framing reset")
         }
 
@@ -430,6 +446,7 @@ class MainActivity : AppCompatActivity() {
         settingsRepo.orientation = o
         optVertical.isSelected = o == Orientation.VERTICAL
         optHorizontal.isSelected = o == Orientation.HORIZONTAL
+        applyPreviewAspect()
     }
 
     private fun selectQuality(q: Quality) {
@@ -452,6 +469,8 @@ class MainActivity : AppCompatActivity() {
         settingsRepo.frameMode = mode
         chipFit.isSelected = mode == FrameMode.FIT
         chipFill.isSelected = mode == FrameMode.FILL
+        preview.framing = currentFraming()
+        preview.refreshMatrix()
     }
 
     private fun renderFramingControls() {
@@ -636,30 +655,60 @@ class MainActivity : AppCompatActivity() {
         val uriString = settingsRepo.videoUri ?: return
         previewThumb.visibility = View.GONE
         emptyPreview.visibility = View.GONE
-        previewVideo.visibility = View.VISIBLE
-        try {
-            previewVideo.setVideoURI(Uri.parse(uriString))
-            val controller = MediaController(this)
-            controller.setAnchorView(previewFrame)
-            previewVideo.setMediaController(controller)
-            previewVideo.start()
-        } catch (t: Throwable) {
-            toast("Preview not available for this video.")
-            stopPreview()
-        }
+        previewTexture.visibility = View.VISIBLE
+        preview.framing = currentFraming()
+        preview.play(this, Uri.parse(uriString))
     }
 
     private fun stopPreview() {
-        try {
-            previewVideo.stopPlayback()
-        } catch (_: Throwable) {
-        }
-        previewVideo.visibility = View.GONE
+        preview.stop()
+        previewTexture.visibility = View.GONE
         if (VideoRepository.current != null && previewThumb.drawable != null) {
             previewThumb.visibility = View.VISIBLE
         } else {
             emptyPreview.visibility = View.VISIBLE
             previewStatus.text = getString(R.string.no_video_selected)
+        }
+    }
+
+    private fun currentFraming() = TexturePreview.Framing(
+        mode = settingsRepo.frameMode,
+        zoomPct = settingsRepo.zoomPct,
+        panXPct = settingsRepo.panXPct,
+        panYPct = settingsRepo.panYPct
+    )
+
+    /**
+     * Phase 2: the preview canvas itself becomes exactly 16:9 or 9:16, so a
+     * portrait stream shows a true portrait box, never a landscape box with a
+     * small vertical video inside.
+     */
+    private fun applyPreviewAspect() {
+        previewFrame.post {
+            val parentW = (previewFrame.parent as? View)?.width ?: previewFrame.width
+            if (parentW <= 0) return@post
+            val lp = previewFrame.layoutParams
+            if (settingsRepo.orientation == Orientation.VERTICAL) {
+                val maxH = (resources.displayMetrics.heightPixels * 0.52f).toInt()
+                val h = minOf((parentW * 16f / 9f).toInt(), maxH)
+                val w = (h * 9f / 16f).toInt()
+                if (lp.width != w || lp.height != h) {
+                    lp.width = w
+                    lp.height = h
+                    (lp as? android.widget.LinearLayout.LayoutParams)?.gravity =
+                        android.view.Gravity.CENTER_HORIZONTAL
+                    previewFrame.layoutParams = lp
+                }
+            } else {
+                val w = parentW
+                val h = (w * 9f / 16f).toInt()
+                if (lp.width != w || lp.height != h) {
+                    lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    lp.height = h
+                    previewFrame.layoutParams = lp
+                }
+            }
+            preview.refreshMatrix()
         }
     }
 
