@@ -1,0 +1,3834 @@
+================================================================
+LIVE VIP — FULL SOURCE DUMP — PART 03
+Project: Live-bc (Android, package com.videolive.app)
+Commit: c871f1be5a0a682ed40480e486c10a1808ed06be  Branch: arena/623b9178-live-bc
+Generated: 2026-10-09T11:45:11Z
+================================================================
+
+========== FILE: app/src/main/res/drawable/ic_loop.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:pathData="M17,2.5l3.5,3.5L17,9.5M3,12V9.5A3.5,3.5 0 0,1 6.5,6h13.6M7,21.5L3.5,18L7,14.5M21,12v2.5A3.5,3.5 0 0,1 17.5,18H3.9"
+        android:strokeColor="?attr/vlAccentSoft" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_mic.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="?attr/vlAccent" android:pathData="M12,3a3,3 0 0,1 3,3v5a3,3 0 0,1 -6,0V6a3,3 0 0,1 3,-3z" />
+    <path
+        android:pathData="M6,11a6,6 0 0,0 12,0M12,17v3.5M8.8,20.5h6.4"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_notify.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFF" android:pathData="M12,3a9,9 0 1,1 0,18a9,9 0 1,1 0,-18zM10,8.6v6.8c0,0.6 0.66,0.97 1.17,0.64l5.1,-3.4c0.46,-0.31 0.46,-0.97 0,-1.28l-5.1,-3.4C10.66,7.63 10,8 10,8.6z" android:fillAlpha="0" />
+    <path
+        android:pathData="M12,3a9,9 0 1,1 0,18a9,9 0 1,1 0,-18z"
+        android:strokeColor="#FFFFFF" android:strokeWidth="1.8" android:fillColor="#00000000" />
+    <path android:fillColor="#FFFFFF" android:pathData="M10.2,8.9v6.2c0,0.55 0.6,0.88 1.07,0.58l4.66,-3.1c0.42,-0.28 0.42,-0.88 0,-1.16l-4.66,-3.1C10.8,8.02 10.2,8.35 10.2,8.9z" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_palette.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp"
+    android:height="22dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="?attr/vlTextSecondary"
+        android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10c1.1,0 2,-0.9 2,-2 0,-0.51 -0.19,-0.97 -0.51,-1.33 -0.3,-0.35 -0.49,-0.81 -0.49,-1.31 0,-1.1 0.9,-2 2,-2h2.36c3.12,0 5.64,-2.52 5.64,-5.64C23,5.8 18.08,2 12,2zM6.5,12c-0.83,0 -1.5,-0.67 -1.5,-1.5S5.67,9 6.5,9 8,9.67 8,10.5 7.33,12 6.5,12zM9.5,8C8.67,8 8,7.33 8,6.5S8.67,5 9.5,5s1.5,0.67 1.5,1.5S10.33,8 9.5,8zM14.5,8c-0.83,0 -1.5,-0.67 -1.5,-1.5S13.67,5 14.5,5s1.5,0.67 1.5,1.5S15.33,8 14.5,8zM17.5,12c-0.83,0 -1.5,-0.67 -1.5,-1.5S16.67,9 17.5,9s1.5,0.67 1.5,1.5 -0.67,1.5 -1.5,1.5z" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_play.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFF" android:pathData="M8,5.14v13.72c0,0.81 0.89,1.3 1.56,0.86l10.36,-6.86c0.61,-0.4 0.61,-1.32 0,-1.72L9.56,4.28C8.89,3.84 8,4.33 8,5.14z" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_stop.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFF" android:pathData="M7,5.5h10A1.5,1.5 0 0,1 18.5,7v10a1.5,1.5 0 0,1 -1.5,1.5H7A1.5,1.5 0 0,1 5.5,17V7A1.5,1.5 0 0,1 7,5.5z" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_tune.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:pathData="M4,7h9M17.5,7H20M4,12h2.5M11,12h9M4,17h11M19.5,17H20"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:fillColor="?attr/vlAccent" android:pathData="M15.2,7a2.1,2.1 0 1,1 -4.2,0a2.1,2.1 0 1,1 4.2,0z" />
+    <path android:fillColor="?attr/vlAccent" android:pathData="M8.9,12a2.1,2.1 0 1,1 -4.2,0a2.1,2.1 0 1,1 4.2,0z" />
+    <path android:fillColor="?attr/vlAccent" android:pathData="M17.4,17a2.1,2.1 0 1,1 -4.2,0a2.1,2.1 0 1,1 4.2,0z" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_video.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:pathData="M4,6.5h11a2,2 0 0,1 2,2v7a2,2 0 0,1 -2,2H4a2,2 0 0,1 -2,-2v-7a2,2 0 0,1 2,-2z"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:fillColor="#00000000" />
+    <path
+        android:pathData="M17,10.2l4.4,-2.7a0.6,0.6 0 0,1 0.9,0.5v8a0.6,0.6 0 0,1 -0.9,0.5L17,13.8"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/option_text_selector.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_selected="true" android:color="?attr/vlTextPrimary" />
+    <item android:color="?attr/vlTextSecondary" />
+</selector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/layout/activity_destinations.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btnBack"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_button_secondary"
+                android:contentDescription="@string/cancel"
+                android:src="@drawable/ic_back" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/destinations_title"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="@string/destinations_hint"
+            android:textColor="?attr/vlTextFaint"
+            android:textSize="11.5sp" />
+
+        <LinearLayout
+            android:id="@+id/listDestinations"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/btnSaveDestinations"
+            android:layout_width="match_parent"
+            android:layout_height="58dp"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/bg_button_live"
+            android:gravity="center"
+            android:text="SAVE DESTINATIONS"
+            android:textColor="?attr/vlOnAccent"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Streaming publishes to ONE destination at a time (the ACTIVE one). Phone-side simulcast to several servers at once is not supported — use your platform's restreaming feature for that."
+            android:textColor="?attr/vlTextFaint"
+            android:textSize="11.5sp" />
+    </LinearLayout>
+</ScrollView>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/layout/activity_live.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="10dp"
+            android:contentDescription="@string/app_name"
+            android:scaleType="fitCenter"
+            android:src="@drawable/logo_live_vip" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_pill_live"
+            android:paddingStart="16dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp"
+            android:text="@string/live_now"
+            android:textColor="?attr/vlOnAccent"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <ImageButton
+            android:id="@+id/btnLiveSettings"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_button_secondary"
+            android:contentDescription="@string/settings"
+            android:src="@drawable/ic_tune" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/txtElapsed"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="30dp"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:text="00:00:00"
+        android:textColor="?attr/vlTextPrimary"
+        android:textSize="46sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/txtStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center"
+        android:text="Connecting..."
+        android:textColor="?attr/vlAccent"
+        android:textSize="14.5sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="28dp"
+        android:background="@drawable/bg_card"
+        android:orientation="vertical"
+        android:padding="18dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_video"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtVideoName"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:ellipsize="middle"
+                android:gravity="end"
+                android:maxLines="1"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="12dp"
+            android:background="?attr/vlStroke" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_resolution"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtResolution"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="12dp"
+            android:background="?attr/vlStroke" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_fps"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtFps"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="12dp"
+            android:background="?attr/vlStroke" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_bitrate"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtBitrate"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="12dp"
+            android:background="?attr/vlStroke" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_connection"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtConnection"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="@color/green"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_loop"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtLoop"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_network"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtNetwork"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/rowNowPlaying"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_now_playing"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtNowPlaying"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:ellipsize="middle"
+                android:gravity="end"
+                android:maxLines="1"
+                android:textColor="?attr/vlAccent"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_reconnects"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtReconnects"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_device_temp"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtDeviceTemp"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_encoder"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtEncoder"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_health"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtHealth"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlAccent"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/rowLastError"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_last_error"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtLastError"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:maxLines="2"
+                android:textColor="@color/red"
+                android:textSize="12.5sp" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="12dp"
+            android:background="?attr/vlStroke" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_audio"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtAudio"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/rowMicLevel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_mic_level"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtMicLevel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlAccent"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/txtPerfWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_card"
+        android:padding="12dp"
+        android:textColor="@color/amber"
+        android:textSize="12.5sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/txtAnalyticsNote"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/youtube_analytics_note"
+        android:textColor="?attr/vlTextFaint"
+        android:textSize="11.5sp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/txtYouTubeHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_card"
+            android:lineSpacingExtra="3dp"
+            android:padding="14dp"
+            android:text="@string/youtube_confirmation_hint"
+            android:textColor="?attr/vlTextSecondary"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/btnRetryNow"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_marginEnd="10dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_button_secondary"
+            android:gravity="center"
+            android:text="@string/retry_now"
+            android:textColor="@color/amber"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/btnMuteMic"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_marginEnd="10dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_button_secondary"
+            android:gravity="center"
+            android:text="@string/mute_mic"
+            android:textColor="?attr/vlAccent"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/btnStopLive"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1.4"
+            android:background="@drawable/bg_button_live"
+            android:gravity="center"
+            android:text="@string/stop_live"
+            android:textColor="?attr/vlOnAccent"
+            android:textSize="14.5sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</LinearLayout>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/layout/activity_logs.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_button_secondary"
+            android:contentDescription="@string/cancel"
+            android:src="@drawable/ic_back" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:text="@string/logs_title"
+            android:textColor="?attr/vlTextPrimary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnCopyLogs"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_button_secondary"
+            android:gravity="center"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/copy_logs"
+            android:textColor="?attr/vlAccent"
+            android:textSize="13.5sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnShareLogs"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_button_secondary"
+            android:gravity="center"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/share_logs"
+            android:textColor="?attr/vlAccent"
+            android:textSize="13.5sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnClear"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_button_secondary"
+            android:gravity="center"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/clear_logs"
+            android:textColor="@color/red"
+            android:textSize="13.5sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/logs_note"
+        android:textColor="?attr/vlTextFaint"
+        android:textSize="11.5sp" />
+
+    <ScrollView
+        android:id="@+id/logsScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_preview"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/txtLogs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:text="(no logs yet)"
+            android:textColor="#9FB4E8"
+            android:textIsSelectable="true"
+            android:textSize="11sp" />
+    </ScrollView>
+</LinearLayout>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/layout/activity_main.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <FrameLayout
+                android:layout_width="48dp"
+                android:layout_height="48dp">
+
+                <ImageView
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_gravity="center"
+                    android:contentDescription="@string/app_name"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/logo_live_vip" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/header_title"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/txtHeaderSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/header_subtitle"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/btnTheme"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_button_secondary"
+                android:contentDescription="@string/theme"
+                android:src="@drawable/ic_palette" />
+
+            <ImageButton
+                android:id="@+id/btnSettings"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_button_secondary"
+                android:contentDescription="@string/settings"
+                android:src="@drawable/ic_tune" />
+        </LinearLayout>
+
+        <!-- Battery warning -->
+        <TextView
+            android:id="@+id/batteryWarning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_banner_battery"
+            android:padding="12dp"
+            android:text="@string/battery_warning"
+            android:textColor="@color/amber"
+            android:textSize="12.5sp"
+            android:visibility="gone" />
+
+        <!-- Return to live banner -->
+        <TextView
+            android:id="@+id/liveBanner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_banner_live"
+            android:padding="14dp"
+            android:text="@string/return_to_live"
+            android:textColor="?attr/vlTextPrimary"
+            android:textSize="13.5sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <!-- CARD 1: SELECT VIDEO -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_video" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:letterSpacing="0.12"
+                    android:text="@string/card_select_video"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <FrameLayout
+                android:id="@+id/previewFrame"
+                android:layout_width="match_parent"
+                android:layout_height="190dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_preview">
+
+                <TextureView
+                    android:id="@+id/previewTexture"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:layout_gravity="center"
+                    android:visibility="gone" />
+
+                <ImageView
+                    android:id="@+id/previewThumb"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@null"
+                    android:scaleType="fitCenter"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/emptyPreview"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:alpha="0.55"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_folder" />
+
+                    <TextView
+                        android:id="@+id/previewStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/no_video_selected"
+                        android:textColor="?attr/vlTextFaint"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <LinearLayout
+                android:id="@+id/videoInfoBlock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/txtFileName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="middle"
+                    android:maxLines="1"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/txtMeta"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12.5sp" />
+
+                <TextView
+                    android:id="@+id/txtAudioPresent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:textColor="?attr/vlAccent"
+                    android:textSize="12.5sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/btnChoose"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_button_secondary"
+                android:gravity="center"
+                android:text="@string/choose_video"
+                android:textColor="?attr/vlAccent"
+                android:textSize="14.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- CARD 2: STREAM DESTINATION -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_broadcast" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:letterSpacing="0.12"
+                    android:text="@string/card_destination"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchFullUrl"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/full_url_mode"
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11.5sp" />
+
+            <LinearLayout
+                android:id="@+id/serverKeyGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_server_url"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12.5sp" />
+
+                <EditText
+                    android:id="@+id/etServerUrl"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:autofillHints="off"
+                    android:background="@drawable/bg_input"
+                    android:hint="@string/hint_server_url"
+                    android:inputType="textUri"
+                    android:minHeight="48dp"
+                    android:padding="12dp"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textColorHint="?attr/vlTextFaint"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/label_stream_key"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12.5sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/etStreamKey"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:autofillHints="password"
+                        android:background="@drawable/bg_input"
+                        android:hint="@string/hint_stream_key"
+                        android:inputType="textPassword"
+                        android:minHeight="48dp"
+                        android:padding="12dp"
+                        android:textColor="?attr/vlTextPrimary"
+                        android:textColorHint="?attr/vlTextFaint"
+                        android:textSize="14sp" />
+
+                    <ImageButton
+                        android:id="@+id/btnKeyEye"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_button_secondary"
+                        android:contentDescription="@string/label_stream_key"
+                        android:src="@drawable/ic_eye" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/btnTestConnection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/bg_button_secondary"
+                    android:gravity="center"
+                    android:minHeight="46dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="@string/test_connection"
+                    android:textColor="?attr/vlAccent"
+                    android:textSize="13.5sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/fullUrlGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_full_url"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12.5sp" />
+
+                <EditText
+                    android:id="@+id/etFullUrl"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:autofillHints="off"
+                    android:background="@drawable/bg_input"
+                    android:hint="@string/hint_full_url"
+                    android:inputType="textUri"
+                    android:minHeight="48dp"
+                    android:padding="12dp"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textColorHint="?attr/vlTextFaint"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- CARD 3: STREAM FORMAT -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_aspect" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:letterSpacing="0.12"
+                    android:text="@string/card_format"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/optVertical"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_option_selector"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="9:16"
+                        android:textColor="?attr/vlAccentSoft"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center"
+                        android:text="@string/format_vertical"
+                        android:textColor="@drawable/option_text_selector"
+                        android:textSize="12.5sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:gravity="center"
+                        android:text="@string/format_vertical_sub"
+                        android:textColor="?attr/vlTextFaint"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/optHorizontal"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_option_selector"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="16:9"
+                        android:textColor="?attr/vlAccent"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center"
+                        android:text="@string/format_horizontal"
+                        android:textColor="@drawable/option_text_selector"
+                        android:textSize="12.5sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:gravity="center"
+                        android:text="@string/format_horizontal_sub"
+                        android:textColor="?attr/vlTextFaint"
+                        android:textSize="11sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- CARD 4: VIDEO SETTINGS -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_tune" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:letterSpacing="0.12"
+                    android:text="@string/card_video_settings"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/label_quality"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12.5sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/q360"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="360p"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/q480"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="480p"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/q720"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="720p"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/q1080"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="1080p"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="@string/label_fps"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12.5sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/fps24"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="24"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/fps25"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="25"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/fps30"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="30"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/fps50"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="50"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/fps60"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="60"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="@string/label_bitrate"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12.5sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical">
+
+                <Spinner
+                    android:id="@+id/spinnerBitrate"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_input" />
+
+                <EditText
+                    android:id="@+id/etBitrate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:autofillHints="off"
+                    android:background="@drawable/bg_input"
+                    android:hint="@string/hint_bitrate"
+                    android:inputType="number"
+                    android:minHeight="48dp"
+                    android:padding="12dp"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textColorHint="?attr/vlTextFaint"
+                    android:textSize="14sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- CARD 5: AUDIO -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_audio" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:letterSpacing="0.12"
+                    android:text="@string/card_audio"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_video_audio"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="14sp" />
+
+                <SeekBar
+                    android:id="@+id/seekVolume"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:max="100"
+                    android:progress="100"
+                    android:progressTint="?attr/vlAccent"
+                    android:thumbTint="?attr/vlAccent" />
+
+                <TextView
+                    android:id="@+id/txtVolume"
+                    android:layout_width="44dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:text="100%"
+                    android:textColor="?attr/vlAccent"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_mic" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:text="@string/label_microphone"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="14sp" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchMic"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/micVolumeRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_mic_volume"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="14sp" />
+
+                <SeekBar
+                    android:id="@+id/seekMicVolume"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:max="200"
+                    android:progress="100"
+                    android:progressTint="?attr/vlAccent"
+                    android:thumbTint="?attr/vlAccent" />
+
+                <TextView
+                    android:id="@+id/txtMicVolume"
+                    android:layout_width="48dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:text="100%"
+                    android:textColor="?attr/vlAccent"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/mic_hint"
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <!-- CARD 6: LOOP -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_loop" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:letterSpacing="0.12"
+                    android:text="@string/card_loop"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/optLoopOne"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_option_selector"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:text="@string/loop_one"
+                    android:textColor="@drawable/option_text_selector"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/loop_one_sub"
+                    android:textColor="?attr/vlTextFaint"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/optLoopAll"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_option_selector"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:text="@string/loop_all"
+                    android:textColor="@drawable/option_text_selector"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/txtPlaylistSummary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/loop_all_sub"
+                    android:textColor="?attr/vlTextFaint"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- CARD 7: FRAMING (Phase 4) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_aspect" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:letterSpacing="0.12"
+                    android:text="@string/card_framing"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/chipFit"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="@string/frame_fit"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/chipFill"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip_selector"
+                    android:gravity="center"
+                    android:paddingTop="9dp"
+                    android:paddingBottom="9dp"
+                    android:text="@string/frame_fill"
+                    android:textColor="@drawable/chip_text_selector"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/frame_hint"
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="56dp"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_zoom"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13sp" />
+
+                <SeekBar
+                    android:id="@+id/seekZoom"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:max="200"
+                    android:progress="0"
+                    android:progressTint="?attr/vlAccent"
+                    android:thumbTint="?attr/vlAccent" />
+
+                <TextView
+                    android:id="@+id/txtZoom"
+                    android:layout_width="48dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:text="100%"
+                    android:textColor="?attr/vlAccent"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="56dp"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_pan_x"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13sp" />
+
+                <SeekBar
+                    android:id="@+id/seekPanX"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:max="200"
+                    android:progress="100"
+                    android:progressTint="?attr/vlAccent"
+                    android:thumbTint="?attr/vlAccent" />
+
+                <TextView
+                    android:id="@+id/txtPanX"
+                    android:layout_width="48dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:text="0"
+                    android:textColor="?attr/vlAccent"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="56dp"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_pan_y"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13sp" />
+
+                <SeekBar
+                    android:id="@+id/seekPanY"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:max="200"
+                    android:progress="100"
+                    android:progressTint="?attr/vlAccent"
+                    android:thumbTint="?attr/vlAccent" />
+
+                <TextView
+                    android:id="@+id/txtPanY"
+                    android:layout_width="48dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:text="0"
+                    android:textColor="?attr/vlAccent"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/btnResetFraming"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_button_secondary"
+                android:paddingStart="16dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="8dp"
+                android:text="@string/reset_framing"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="12.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- PLAYLIST + DESTINATIONS (Phases 3 & 8) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/btnPlaylist"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_button_secondary"
+                android:gravity="center"
+                android:text="@string/btn_playlist"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnDestinations"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_button_secondary"
+                android:gravity="center"
+                android:text="@string/btn_destinations"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- START LIVE -->
+        <TextView
+            android:id="@+id/btnStartLive"
+            android:layout_width="match_parent"
+            android:layout_height="62dp"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/bg_button_live"
+            android:gravity="center"
+            android:text="@string/start_live"
+            android:textColor="?attr/vlOnAccent"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:layout_marginBottom="8dp"
+            android:gravity="center"
+            android:text="H.264 + AAC → FLV → RTMP/RTMPS • FFmpeg engine"
+            android:textColor="?attr/vlTextFaint"
+            android:textSize="11sp" />
+    </LinearLayout>
+</ScrollView>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/layout/activity_playlist.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btnBack"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_button_secondary"
+                android:contentDescription="@string/cancel"
+                android:src="@drawable/ic_back" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:text="@string/playlist_title"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnClearPlaylist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_button_secondary"
+                android:paddingStart="14dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="14dp"
+                android:paddingBottom="8dp"
+                android:text="@string/playlist_clear"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="11.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="@string/playlist_mismatch"
+            android:textColor="?attr/vlTextFaint"
+            android:textSize="11.5sp" />
+
+        <!-- Items -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/txtPlaylistEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/playlist_empty"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/listPlaylist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/btnAddVideos"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_button_secondary"
+                android:gravity="center"
+                android:text="@string/playlist_add"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/txtAdding"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textColor="?attr/vlAccent"
+                android:textSize="12sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Playback options -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="@string/playlist_loop_mode"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <RadioGroup
+                android:id="@+id/rgLoopMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp">
+
+                <RadioButton
+                    android:id="@+id/rbLoopAll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="?attr/vlAccent"
+                    android:text="@string/loop_mode_all"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13.5sp" />
+
+                <RadioButton
+                    android:id="@+id/rbSequential"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="?attr/vlAccent"
+                    android:text="@string/loop_mode_sequential"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13.5sp" />
+
+                <RadioButton
+                    android:id="@+id/rbShuffle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:buttonTint="?attr/vlAccent"
+                    android:text="@string/loop_mode_shuffle"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13.5sp" />
+            </RadioGroup>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:letterSpacing="0.12"
+                android:text="@string/playlist_duration"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <Spinner
+                android:id="@+id/spinnerDuration"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_input" />
+
+            <TextView
+                android:id="@+id/txtPlaylistTotal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12.5sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/btnSaveUse"
+            android:layout_width="match_parent"
+            android:layout_height="58dp"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/bg_button_live"
+            android:gravity="center"
+            android:text="@string/playlist_save"
+            android:textColor="?attr/vlOnAccent"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</ScrollView>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/layout/activity_projects.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:contentDescription="@string/app_name"
+                android:scaleType="fitCenter"
+                android:src="@drawable/logo_live_vip" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/projects_title"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/projects_subtitle"
+                    android:textColor="?attr/vlTextSecondary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/btnThemeProjects"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_button_secondary"
+                android:contentDescription="@string/theme_title"
+                android:src="@drawable/ic_palette" />
+        </LinearLayout>
+
+        <!-- Live banner: shown while any session is streaming. -->
+        <TextView
+            android:id="@+id/liveBannerProjects"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_banner_live"
+            android:padding="14dp"
+            android:text="@string/projects_live_banner"
+            android:textColor="?attr/vlTextPrimary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <!-- Project cards are added here at runtime. -->
+        <LinearLayout
+            android:id="@+id/projectsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/emptyProjectsHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:padding="12dp"
+            android:text="@string/projects_empty_hint"
+            android:textColor="?attr/vlTextSecondary"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <!-- Create Stream -->
+        <TextView
+            android:id="@+id/btnCreateStream"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_button_accent"
+            android:gravity="center"
+            android:padding="16dp"
+            android:text="@string/create_stream"
+            android:textColor="?attr/vlOnAccent"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</ScrollView>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/layout/activity_settings.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btnBack"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_button_secondary"
+                android:contentDescription="@string/cancel"
+                android:src="@drawable/ic_back" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/settings_title"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Background & battery -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="BACKGROUND STREAMING"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Streaming runs in a foreground service with a persistent notification, so it continues while the screen is locked or another app is open. For reliable long streams, allow unrestricted battery usage for this app."
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/txtBatteryStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textColor="@color/amber"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnBattery"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_button_secondary"
+                android:gravity="center"
+                android:text="Disable battery optimization"
+                android:textColor="?attr/vlAccent"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Streaming engine -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="STREAMING ENGINE"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/txtEngineInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="The engine decodes your video, re-encodes it as H.264 + AAC and streams FLV over RTMP/RTMPS. The video loops inside a single FFmpeg session, so the RTMP connection to YouTube is never reconnected at the loop point and timestamps stay continuous."
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Security -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="STREAM KEY SECURITY"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Your stream key is stored encrypted on this device (Android Keystore). It is never logged, never shown in notifications and never sent anywhere except YouTube's RTMP server."
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- Device temperature guard (Phase 7) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="@string/settings_thermal_title"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/thermal_warn_label"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13.5sp" />
+
+                <SeekBar
+                    android:id="@+id/seekThermalWarn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="2"
+                    android:max="15"
+                    android:progressTint="@color/amber"
+                    android:thumbTint="@color/amber" />
+
+                <TextView
+                    android:id="@+id/txtThermalWarn"
+                    android:layout_width="52dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:textColor="@color/amber"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/thermal_stop_label"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13.5sp" />
+
+                <SeekBar
+                    android:id="@+id/seekThermalCrit"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="2"
+                    android:max="15"
+                    android:progressTint="@color/red"
+                    android:thumbTint="@color/red" />
+
+                <TextView
+                    android:id="@+id/txtThermalCrit"
+                    android:layout_width="52dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:textColor="@color/red"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/thermal_hint"
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <!-- Encoding engine -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="ENCODER"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <Spinner
+                android:id="@+id/spinnerEncoder"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_input" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Auto prefers the verified hardware encoder (h264_mediacodec) and falls back to libx264 automatically if hardware fails. The Live screen shows which encoder is actually in use."
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <!-- Appearance -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="APPEARANCE"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Theme"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp" />
+
+            <Spinner
+                android:id="@+id/spinnerThemeMode"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_input" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Accent color"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp" />
+
+            <Spinner
+                android:id="@+id/spinnerAccent"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_input" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Theme and accent apply across the whole app, persist after restart, and never interrupt an active stream."
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <!-- Experimental (Phase 3 gate) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="@string/settings_playlist_title"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/settings_playlist_switch"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13.5sp" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchPlaylist"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Playlist mode streams several videos in one continuous session. Turn this OFF to always stream only the single selected video."
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <!-- Logs -->
+        <TextView
+            android:id="@+id/btnOpenLogs"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_button_secondary"
+            android:gravity="center"
+            android:text="Open Advanced Logs"
+            android:textColor="?attr/vlAccent"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/txtAbout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:gravity="center"
+                android:text="LIVE VIP 3.0 — local video to YouTube Live streaming"
+            android:textColor="?attr/vlTextFaint"
+            android:textSize="11.5sp" />
+    </LinearLayout>
+</ScrollView>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/layout/activity_splash.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFF">
+
+    <ImageView
+        android:layout_width="220dp"
+        android:layout_height="220dp"
+        android:layout_gravity="center"
+        android:contentDescription="@string/app_name"
+        android:scaleType="fitCenter"
+        android:src="@drawable/logo_live_vip" />
+</FrameLayout>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/values/attrs.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Themeable surface colors. Every layout/drawable references these
+         instead of fixed @color values so the theme selector can restyle the
+         whole app consistently. -->
+    <attr name="vlBgTop" format="color" />
+    <attr name="vlBgBottom" format="color" />
+    <attr name="vlCard" format="color" />
+    <attr name="vlStroke" format="color" />
+    <attr name="vlInputBg" format="color" />
+    <attr name="vlInputStroke" format="color" />
+    <attr name="vlTextPrimary" format="color" />
+    <attr name="vlTextSecondary" format="color" />
+    <attr name="vlTextFaint" format="color" />
+    <attr name="vlAccent" format="color" />
+    <attr name="vlAccentSoft" format="color" />
+    <attr name="vlChipBg" format="color" />
+    <attr name="vlOptionSelected" format="color" />
+    <attr name="vlPreviewBg" format="color" />
+    <attr name="vlOnAccent" format="color" />
+</resources>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/values/colors.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base -->
+    <color name="bg_top">#0A0F1F</color>
+    <color name="bg_bottom">#0C1226</color>
+    <color name="card_bg">#141B33</color>
+    <color name="card_stroke">#24304F</color>
+    <color name="input_bg">#0E1529</color>
+    <color name="input_stroke">#2A3760</color>
+
+    <!-- Accents -->
+    <color name="primary">#5B8CFF</color>
+    <color name="primary_dark">#3D6BE0</color>
+    <color name="purple">#7C5CFF</color>
+    <color name="cyan">#2AD4C8</color>
+    <color name="red">#FF3B4E</color>
+    <color name="red_dark">#D92D3F</color>
+    <color name="amber">#FFB020</color>
+    <color name="green">#34D399</color>
+
+    <!-- Text -->
+    <color name="text_primary">#F2F5FF</color>
+    <color name="text_secondary">#98A2C4</color>
+    <color name="text_faint">#5E6A8F</color>
+
+    <color name="chip_bg">#1B2444</color>
+    <color name="option_selected_bg">#1D2A55</color>
+    <color name="preview_bg">#05080F</color>
+</resources>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/values/strings.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LIVE VIP</string>
+
+    <string name="header_title">LIVE VIP</string>
+    <string name="header_subtitle">Stream your video. Go Live.</string>
+
+    <string name="card_select_video">SELECT VIDEO</string>
+    <string name="card_destination">STREAM DESTINATION</string>
+    <string name="card_format">STREAM FORMAT</string>
+    <string name="card_video_settings">VIDEO SETTINGS</string>
+    <string name="card_audio">AUDIO</string>
+    <string name="card_loop">LOOP</string>
+
+    <string name="choose_video">Choose Video</string>
+    <string name="no_video_selected">No video selected</string>
+    <string name="analyzing_video">Analyzing video…</string>
+
+    <string name="label_server_url">YouTube Server URL</string>
+    <string name="hint_server_url">rtmps://a.rtmp.youtube.com/live2</string>
+    <string name="label_stream_key">Stream Key</string>
+    <string name="hint_stream_key">Paste your YouTube stream key</string>
+    <string name="label_full_url">Full RTMP/RTMPS URL</string>
+    <string name="hint_full_url">rtmps://a.rtmp.youtube.com/live2/your-key</string>
+    <string name="full_url_mode">Full URL mode (advanced)</string>
+
+    <string name="format_vertical">Shorts / Vertical</string>
+    <string name="format_vertical_sub">9:16 portrait</string>
+    <string name="format_horizontal">Long Video / Horizontal</string>
+    <string name="format_horizontal_sub">16:9 landscape</string>
+
+    <string name="label_quality">Quality</string>
+    <string name="label_fps">FPS</string>
+    <string name="label_bitrate">Bitrate</string>
+    <string name="hint_bitrate">kbps</string>
+
+    <string name="label_video_audio">Video Audio</string>
+    <string name="label_microphone">Microphone</string>
+    <string name="mic_hint">When ON, your mic is mixed with the video audio. When OFF, the video audio keeps playing normally.</string>
+
+    <string name="loop_one">Loop One</string>
+    <string name="loop_one_sub">Repeat this video continuously without reconnecting</string>
+    <string name="loop_all">Playlist Mode</string>
+    <string name="loop_all_sub">Multiple videos in ONE continuous stream — tap to manage</string>
+
+    <!-- Phase 3: Playlist -->
+    <string name="playlist_title">Playlist</string>
+    <string name="playlist_add">＋ ADD VIDEOS</string>
+    <string name="playlist_empty">No videos yet. Add 2 or more videos — they play back-to-back in one continuous stream (no reconnect between items).</string>
+    <string name="playlist_loop_mode">Playback order</string>
+    <string name="loop_mode_all">Loop All — repeat the whole playlist</string>
+    <string name="loop_mode_sequential">Sequential — play once, then stop</string>
+    <string name="loop_mode_shuffle">Shuffle — random order, play once</string>
+    <string name="playlist_duration">Session duration</string>
+    <string name="duration_unlimited">Unlimited (until you stop)</string>
+    <string name="playlist_clear">CLEAR PLAYLIST</string>
+    <string name="playlist_save">SAVE &amp; USE</string>
+    <string name="playlist_mismatch">These videos have different codecs/resolutions. Seamless playback needs identical format — the stream will refuse to start if they don\'t match.</string>
+    <string name="btn_playlist">PLAYLIST</string>
+    <string name="btn_destinations">DESTINATIONS</string>
+
+    <!-- Phase 4: Framing -->
+    <string name="card_framing">FRAMING</string>
+    <string name="frame_fit">Fit (letterbox)</string>
+    <string name="frame_fill">Fill (crop)</string>
+    <string name="frame_hint">Applied to the encoded output when the stream starts. Your original video file is never modified.</string>
+    <string name="label_zoom">Zoom</string>
+    <string name="label_pan_x">Pan X</string>
+    <string name="label_pan_y">Pan Y</string>
+    <string name="reset_framing">RESET</string>
+
+    <!-- Phase 5: Mic volume -->
+    <string name="label_mic_volume">Mic Level</string>
+
+    <!-- Phase 7: Thermal -->
+    <string name="settings_thermal_title">DEVICE TEMPERATURE GUARD</string>
+    <string name="thermal_warn_label">Warning from</string>
+    <string name="thermal_stop_label">Safe stop at</string>
+    <string name="thermal_hint">Temperature is read from the phone\'s battery sensor while streaming. At the safe-stop point the stream ends cleanly to protect your device.</string>
+
+    <!-- Phase 3 gate -->
+    <string name="settings_playlist_title">EXPERIMENTAL</string>
+    <string name="settings_playlist_switch">Enable Playlist mode</string>
+
+    <!-- Phase 8: Destinations -->
+    <string name="destinations_title">Destinations</string>
+    <string name="destinations_hint">Save up to 3 RTMP/RTMPS destinations. Stream keys stay encrypted on this phone and are never shown or logged. The ACTIVE destination is used for streaming.</string>
+    <string name="destination_test">TEST</string>
+    <string name="destination_active">ACTIVE</string>
+    <string name="destination_add">＋ ADD DESTINATION</string>
+    <string name="destination_name">Name</string>
+    <string name="destination_server">Server URL</string>
+    <string name="destination_key">Stream Key</string>
+
+    <!-- Phase 9: Live screen -->
+    <string name="row_reconnects">Reconnects</string>
+    <string name="row_last_error">Last error</string>
+    <string name="row_mic_level">Mic level</string>
+    <string name="row_now_playing">Now playing</string>
+    <string name="youtube_analytics_note">YouTube analytics unavailable — this app publishes video only. See YouTube Studio for viewers and stats.</string>
+    <string name="row_device_temp">Device temp</string>
+    <string name="row_encoder">Encoder</string>
+    <string name="row_health">Stream health</string>
+
+    <string name="start_live">🔴 START LIVE</string>
+    <string name="stop_live">STOP LIVE</string>
+    <string name="live_now">● LIVE</string>
+
+    <string name="battery_warning">⚠ Battery optimization is ON — long background streams may be killed. Tap to fix.</string>
+    <string name="return_to_live">🔴 A live stream is running — tap to open</string>
+
+    <string name="row_video">Video</string>
+    <string name="row_resolution">Resolution</string>
+    <string name="row_fps">FPS</string>
+    <string name="row_bitrate">Bitrate</string>
+    <string name="row_connection">Connection</string>
+    <string name="row_audio">Audio</string>
+
+    <string name="mute_mic">Mute Mic</string>
+    <string name="unmute_mic">Unmute Mic</string>
+    <string name="settings">Settings</string>
+    <string name="theme">Theme</string>
+    <string name="theme_title">Studio theme</string>
+
+    <string name="stop_confirm_title">Stop this live stream?</string>
+    <string name="stop_confirm_message">The stream will be stopped, FFmpeg will shut down and the RTMP connection will be closed.</string>
+    <string name="cancel">Cancel</string>
+    <string name="stop">Stop</string>
+
+    <string name="settings_title">Settings &amp; Help</string>
+    <string name="logs_title">Advanced Logs</string>
+    <string name="clear_logs">Clear</string>
+    <string name="copy_logs">Copy</string>
+    <string name="share_logs">Share</string>
+    <string name="logs_copied">Logs copied to clipboard</string>
+    <string name="logs_note">Logs are sanitized: the stream key is never written to logs.</string>
+    <string name="test_connection">TEST YOUTUBE CONNECTION</string>
+    <string name="row_loop">Loop / item</string>
+    <string name="row_network">Network</string>
+    <string name="retry_now">RETRY NOW</string>
+    <string name="youtube_confirmation_hint">This app cannot see YouTube\'s broadcast state. While the encoder is sending video, open the YouTube Live Control Room (YouTube Studio → Go Live) — a preview of your stream should appear there. If your stream does not auto-start, press GO LIVE there. Only then is the broadcast public.</string>
+
+    <!-- Stream projects -->
+    <string name="projects_title">Stream Projects</string>
+    <string name="projects_subtitle">Every stream keeps its own video, destination and settings</string>
+    <string name="projects_live_banner">● A stream is LIVE right now — tap to open the dashboard</string>
+    <string name="projects_empty_hint">No projects yet. Tap CREATE STREAM to make your first one.</string>
+    <string name="create_stream">+  CREATE STREAM</string>
+    <string name="project_name_hint">Project name (e.g. Music Live)</string>
+    <string name="create">Create</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="rename_project">Rename project</string>
+    <string name="delete_project">Delete project?</string>
+    <string name="delete_project_body">\"%1$s\" and its saved settings will be removed. A running stream is NOT stopped, and the video file itself is never deleted.</string>
+    <string name="projects_already_live_title">A stream is already live</string>
+    <string name="projects_already_live_body">Only one live session can run at a time. Stop the current stream from its dashboard before starting another project.</string>
+    <string name="projects_open_live">Open active session</string>
+    <string name="project_opened">Project \"%1$s\" loaded</string>
+</resources>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/values/themes.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Base: every surface/text/accent reads from the themeable attrs so
+         the 7 selectable themes restyle the entire app consistently. -->
+    <style name="Theme.VideoLive" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">?attr/vlAccent</item>
+        <item name="colorPrimaryDark">?attr/vlBgTop</item>
+        <item name="colorSecondary">?attr/vlAccentSoft</item>
+        <item name="colorAccent">?attr/vlAccent</item>
+        <item name="android:windowBackground">@drawable/bg_window</item>
+        <item name="android:statusBarColor">?attr/vlBgTop</item>
+        <item name="android:navigationBarColor">?attr/vlBgBottom</item>
+        <item name="android:textColorPrimary">?attr/vlTextPrimary</item>
+        <item name="android:textColorSecondary">?attr/vlTextSecondary</item>
+        <item name="android:colorControlActivated">?attr/vlAccent</item>
+        <item name="android:colorEdgeEffect">?attr/vlAccent</item>
+        <item name="materialAlertDialogTheme">@style/Theme.VideoLive.Dialog</item>
+    </style>
+
+    <style name="Theme.VideoLive.Dialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="android:background">?attr/vlCard</item>
+        <item name="colorPrimary">?attr/vlAccent</item>
+        <item name="colorSecondary">?attr/vlAccentSoft</item>
+        <item name="android:textColorPrimary">?attr/vlTextPrimary</item>
+        <item name="android:textColorSecondary">?attr/vlTextSecondary</item>
+    </style>
+
+    <!-- 1 · Graphite (signature studio look) -->
+    <style name="Theme.VideoLive.Graphite" parent="Theme.VideoLive">
+        <item name="vlBgTop">#0A0F1F</item>
+        <item name="vlBgBottom">#0C1226</item>
+        <item name="vlCard">#141B33</item>
+        <item name="vlStroke">#24304F</item>
+        <item name="vlInputBg">#0E1529</item>
+        <item name="vlInputStroke">#2A3760</item>
+        <item name="vlTextPrimary">#F2F5FF</item>
+        <item name="vlTextSecondary">#98A2C4</item>
+        <item name="vlTextFaint">#5E6A8F</item>
+        <item name="vlAccent">#5B8CFF</item>
+        <item name="vlAccentSoft">#2AD4C8</item>
+        <item name="vlChipBg">#1B2444</item>
+        <item name="vlOptionSelected">#1D2A55</item>
+        <item name="vlPreviewBg">#05080F</item>
+        <item name="vlOnAccent">#FFFFFF</item>
+    </style>
+
+    <!-- 2 · Pure Black -->
+    <style name="Theme.VideoLive.Black" parent="Theme.VideoLive">
+        <item name="vlBgTop">#000000</item>
+        <item name="vlBgBottom">#050507</item>
+        <item name="vlCard">#101014</item>
+        <item name="vlStroke">#26262E</item>
+        <item name="vlInputBg">#0A0A0E</item>
+        <item name="vlInputStroke">#2E2E38</item>
+        <item name="vlTextPrimary">#FAFAFC</item>
+        <item name="vlTextSecondary">#A2A2AE</item>
+        <item name="vlTextFaint">#63636D</item>
+        <item name="vlAccent">#E8EAED</item>
+        <item name="vlAccentSoft">#8AB4FF</item>
+        <item name="vlChipBg">#17171C</item>
+        <item name="vlOptionSelected">#1D1D26</item>
+        <item name="vlPreviewBg">#000000</item>
+        <item name="vlOnAccent">#0A0A0E</item>
+    </style>
+
+    <!-- 3 · Clean White -->
+    <style name="Theme.VideoLive.White" parent="Theme.VideoLive">
+        <item name="vlBgTop">#FAFBFD</item>
+        <item name="vlBgBottom">#F1F3F8</item>
+        <item name="vlCard">#FFFFFF</item>
+        <item name="vlStroke">#E3E7EF</item>
+        <item name="vlInputBg">#F5F7FA</item>
+        <item name="vlInputStroke">#D8DEE9</item>
+        <item name="vlTextPrimary">#12151F</item>
+        <item name="vlTextSecondary">#5A6478</item>
+        <item name="vlTextFaint">#9AA2B4</item>
+        <item name="vlAccent">#2456E6</item>
+        <item name="vlAccentSoft">#0E9C92</item>
+        <item name="vlChipBg">#EEF1F7</item>
+        <item name="vlOptionSelected">#E4EBFB</item>
+        <item name="vlPreviewBg">#0B0D12</item>
+        <item name="vlOnAccent">#FFFFFF</item>
+    </style>
+
+    <!-- 4 · Midnight Blue -->
+    <style name="Theme.VideoLive.Midnight" parent="Theme.VideoLive">
+        <item name="vlBgTop">#060B1E</item>
+        <item name="vlBgBottom">#0A1230</item>
+        <item name="vlCard">#0E1836</item>
+        <item name="vlStroke">#1F2C55</item>
+        <item name="vlInputBg">#0A1128</item>
+        <item name="vlInputStroke">#27356B</item>
+        <item name="vlTextPrimary">#EFF3FF</item>
+        <item name="vlTextSecondary">#93A0CC</item>
+        <item name="vlTextFaint">#56618C</item>
+        <item name="vlAccent">#6EA8FF</item>
+        <item name="vlAccentSoft">#8F7BFF</item>
+        <item name="vlChipBg">#14204A</item>
+        <item name="vlOptionSelected">#182757</item>
+        <item name="vlPreviewBg">#040817</item>
+        <item name="vlOnAccent">#071022</item>
+    </style>
+
+    <!-- 5 · Emerald -->
+    <style name="Theme.VideoLive.Emerald" parent="Theme.VideoLive">
+        <item name="vlBgTop">#07120D</item>
+        <item name="vlBgBottom">#0A1811</item>
+        <item name="vlCard">#0E211A</item>
+        <item name="vlStroke">#1E3A2E</item>
+        <item name="vlInputBg">#0A1913</item>
+        <item name="vlInputStroke">#265040</item>
+        <item name="vlTextPrimary">#F0FBF6</item>
+        <item name="vlTextSecondary">#93B8A8</item>
+        <item name="vlTextFaint">#547263</item>
+        <item name="vlAccent">#34D399</item>
+        <item name="vlAccentSoft">#2AD4C8</item>
+        <item name="vlChipBg">#123128</item>
+        <item name="vlOptionSelected">#164033</item>
+        <item name="vlPreviewBg">#04100B</item>
+        <item name="vlOnAccent">#062018</item>
+    </style>
+
+    <!-- 6 · Violet -->
+    <style name="Theme.VideoLive.Violet" parent="Theme.VideoLive">
+        <item name="vlBgTop">#0E0A1E</item>
+        <item name="vlBgBottom">#140E2C</item>
+        <item name="vlCard">#1A1338</item>
+        <item name="vlStroke">#2E2458</item>
+        <item name="vlInputBg">#150F2E</item>
+        <item name="vlInputStroke">#3A2D70</item>
+        <item name="vlTextPrimary">#F6F2FF</item>
+        <item name="vlTextSecondary">#A79BC8</item>
+        <item name="vlTextFaint">#665B8C</item>
+        <item name="vlAccent">#8F7BFF</item>
+        <item name="vlAccentSoft">#C084FC</item>
+        <item name="vlChipBg">#241A4D</item>
+        <item name="vlOptionSelected">#2C2060</item>
+        <item name="vlPreviewBg">#0A0718</item>
+        <item name="vlOnAccent">#FFFFFF</item>
+    </style>
+
+    <!-- 7 · Cyan -->
+    <style name="Theme.VideoLive.Cyan" parent="Theme.VideoLive">
+        <item name="vlBgTop">#04121A</item>
+        <item name="vlBgBottom">#061824</item>
+        <item name="vlCard">#0A2230</item>
+        <item name="vlStroke">#164054</item>
+        <item name="vlInputBg">#071B26</item>
+        <item name="vlInputStroke">#1E546C</item>
+        <item name="vlTextPrimary">#EFFBFF</item>
+        <item name="vlTextSecondary">#8FB4C4</item>
+        <item name="vlTextFaint">#4F7284</item>
+        <item name="vlAccent">#22D3EE</item>
+        <item name="vlAccentSoft">#5B8CFF</item>
+        <item name="vlChipBg">#0D2C3D</item>
+        <item name="vlOptionSelected">#113A50</item>
+        <item name="vlPreviewBg">#030E14</item>
+        <item name="vlOnAccent">#062028</item>
+    </style>
+
+    <!-- Accent overlays: applied on top of any base theme via applyStyle so
+         users can combine any theme with any coordinated accent. -->
+    <style name="Accent_Purple">
+        <item name="vlAccent">#7C4DFF</item>
+        <item name="vlAccentSoft">#B388FF</item>
+        <item name="vlOnAccent">#FFFFFF</item>
+    </style>
+
+    <style name="Accent_Cyan">
+        <item name="vlAccent">#00C2FF</item>
+        <item name="vlAccentSoft">#22D3EE</item>
+        <item name="vlOnAccent">#062028</item>
+    </style>
+
+    <style name="Accent_Blue">
+        <item name="vlAccent">#2979FF</item>
+        <item name="vlAccentSoft">#448AFF</item>
+        <item name="vlOnAccent">#FFFFFF</item>
+    </style>
+
+    <style name="Accent_Teal">
+        <item name="vlAccent">#00BFA5</item>
+        <item name="vlAccentSoft">#26A69A</item>
+        <item name="vlOnAccent">#04211C</item>
+    </style>
+
+    <style name="Accent_Green">
+        <item name="vlAccent">#00C853</item>
+        <item name="vlAccentSoft">#66BB6A</item>
+        <item name="vlOnAccent">#03230F</item>
+    </style>
+
+    <style name="Accent_Amber">
+        <item name="vlAccent">#FFB300</item>
+        <item name="vlAccentSoft">#FFCA28</item>
+        <item name="vlOnAccent">#241A02</item>
+    </style>
+</resources>
+
+========== END FILE ==========
+
+========== FILE: build.gradle.kts ==========
+// Top-level build file. Plugin versions are declared here and applied in module build files.
+plugins {
+    id("com.android.application") version "8.7.3" apply false
+    id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+}
+
+========== END FILE ==========
+
+========== FILE: docs/FINAL-REPORT.md ==========
+# FINAL REPORT — LIVE VIP "FINAL LIVE VIP APK" round
+
+Branch `arena/623b9178-live-bc` • last green commit `c5babdd` • tag `v4.0-working`
+APK: https://github.com/primetushar325-rgb/Live-bc/releases/download/apk-latest/VideoLive-release.apk
+(Release `apk-latest`, file `VideoLive-release.apk`, universal 4-ABI.)
+
+---
+
+## 1. Why YouTube stopped receiving while the app still showed LIVE
+
+**Root cause (from your own device logs):** the software encoder (libx264)
+could not sustain the chosen 720p30 vertical encode. Your logs show
+`speed=0.6-0.8x` and encoded `fps=18-23` against a 30 fps target.
+
+Chain of failure:
+1. Encoder falls behind → frames queue up.
+2. FFmpeg's RTMPS output writes start blocking → upload to YouTube
+   effectively stops or crawls.
+3. YouTube ingest declares the stream dead (ingest timeout) and ends it —
+   from 30 s up to ~1 h 30 m in, matching your reports.
+4. The app still looked "LIVE" because the old watchdog only reacted to
+   **zero** progress. Slow-but-continuing progress never triggered it, and
+   nothing ever verified that YouTube was still receiving.
+
+There was no crash, no loop bug, no timestamp jump: it was ingest starvation
+from an overloaded software encode. This was stated before as a hypothesis;
+with the speed/fps evidence it is the confirmed explanation.
+
+## 2. What changed in this final round (engine untouched)
+
+- **Hardware encoder path (AUTO default).** FFmpeg's `-encoders` list is
+  probed once; `h264_mediacodec` is used only when proven present
+  (your device's list confirms it is packaged). Settings → Encoder offers
+  Auto / Hardware / Software.
+- **Verification, not assumption.** The encoder actually in use is parsed
+  from FFmpeg's own output mapping line and shown on the Live screen +
+  diagnostics. Detecting availability alone is never treated as proof.
+- **Automatic fallback.** If the hardware encoder fails or stalls within the
+  first 20 s, the session restarts once on tested libx264. Encoder choice,
+  probe result and fallback events are all logged.
+- **Honest overload behavior.** If the device is overloaded and software was
+  already in use, the app now **fails with a clear recommendation** (drop to
+  480p / lower fps) instead of restart-looping the same doomed config.
+- **Transport-stall signal.** If encoded frames advance but output bytes stop
+  growing, the network write is blocked → health shows **Transport stalled**
+  well before the watchdog, and the event is logged.
+- **Health monitor.** Live screen + diagnostics show:
+  Healthy / Performance warning / Transport stalled / Recovering / Failed /
+  Stopped, plus the verified encoder name. Reconnect counters and longest-run
+  seconds already existed.
+- **Appearance (from the Master Upgrade prompt).** Settings now has a theme
+  mode picker (System default / Light / Graphite) and 6 accent colors.
+  Choices persist and changing them NEVER restarts or touches the stream.
+
+## 3. Actual encoder used
+
+Cannot be answered from this sandbox (no device). What IS guaranteed:
+- The app logs `Encoder preference: … | hardware H.264 present: true/false`.
+- It logs which encoder was selected before each attempt.
+- The Live screen shows the **verified** encoder parsed from FFmpeg output.
+Report the on-screen "Encoder" line back and that closes the loop.
+
+## 4. Before / after numbers
+
+| Measure | Before (your logs) | After |
+|---|---|---|
+| Speed | 0.6–0.8x | **Not measured here** — expect ~1.0x if the HW encoder carries 720p30; verify via the Diagnostics page |
+| Encoded FPS | 18–23 of 30 | Same: verify on device |
+| Failure mode | Silent YouTube timeout | Warns / fails honestly with cause |
+
+## 5. 6–7 hour soak
+
+**Not performed.** There is no Android device or emulator in this environment;
+a real 6–7 h RTMPS soak cannot be run here and is not claimed.
+A staged procedure (10 min → 30 min → 90 min → 3 h → 6–7 h) with checklists
+is in `docs/SOAK-TEST-PROCEDURE.md`. The 90-minute stage directly targets
+your previous failure window.
+
+## 6. Verified vs not verified
+
+- **Verified:** everything compiles, assembles, signs and dexes in GitHub
+  Actions at `c5babdd`; APK published to `apk-latest`.
+- **NOT verified (needs your phone):** hardware encoder behavior on your
+  chipset, real RTMPS to YouTube, thermal behavior, reconnects on real
+  network drops, theme/accent rendering, any soak duration.
+
+## 7. Deferred from the Master Upgrade prompt (documented, not silently dropped)
+
+- Library grid projects / scenes, custom overlay widgets, YouTube analytics
+  integration — deferred by your own instruction ("if you cannot finish all
+  features, document them and build the working app first").
+- Everything already shipped (streaming engine, mic mixing, SAF cache,
+  playlists, destinations, diagnostics, themes, overlays) is intact.
+
+## 8. Rollback points
+
+- `baseline-v3.0-working` (97dafc9) — last known-good before this round.
+- `v4.0-working` (c5babdd) — this round, CI green.
+If a regression appears on your phone, reinstall from the older tag's release
+or ask to revert.
+
+========== END FILE ==========
+
+========== FILE: docs/MASTER-ROUND-REPORT.md ==========
+# REPORT — "FINAL MASTER ENGINEERING PROMPT" round
+
+Branch `arena/623b9178-live-bc` • green commits `d6e832e` (drift monitor)
+and `4d92e8d` (projects) • checkpoints `v4.0-working`, `v5.0-projects`
+APK (new): https://github.com/primetushar325-rgb/Live-bc/releases/download/apk-latest/VideoLive-release.apk
+(VideoLive-release.apk, 65,420,889 bytes, universal 4-ABI)
+
+---
+
+## 1. The ~1 h 8 m lag — evidence-based diagnosis
+
+Pipeline audited end to end before any change (Phase 1 honored: engine not
+rewritten, checkpoint tags kept).
+
+Eliminated with evidence:
+- **Timestamps/loops:** ONE FFmpeg session, `-stream_loop -1` inside it, RTMP
+  output opened once and never reopened → output PTS/DTS stay monotonic, no
+  boundary reset, no duplicate decoders/encoders/sessions. int64 µs
+  timestamps cannot wrap in hours. CFR `fps` filter removes VFR pacing jitter.
+- **Unbounded app-side growth:** LogStore is a 600-line ring; cache is bounded
+  and reused; MicMixer releases its AudioRecord on stop.
+- **Memory/thermal:** thermal guard (warn/crit) already present and logged.
+
+Most defensible mechanism for "fine at first, laggy after ~1 h":
+**encode or transport running slightly under real time.** With `-re` pacing,
+any sustained speed < 1.0x makes the output fall progressively behind wall
+clock; the deficit is invisible for tens of minutes, then YouTube-side
+buffering/stutter appears. Thermal throttling of a software encode after
+20–60 min makes this worse over time. Your earlier logs (speed 0.6–0.8x,
+18–23 fps of 30) prove this device's software encoder cannot hold 720p30 —
+the same mechanism at a milder degree explains a later (~68 min) onset.
+
+What this round adds:
+- **Cumulative latency-drift monitor** — every stats tick measures
+  `wall-clock elapsed − FFmpeg out_time`. Warns at 15 s drift; at 45 s posts
+  an on-screen warning with the honest fix (stop, lower quality/FPS,
+  restart). Drift appears in every periodic DIAG line.
+- **Hardware encoder path (AUTO)** — the real long-term cure: MediaCodec
+  fixed-function encoding does not throttle like a CPU encode. Actual encoder
+  is verified from FFmpeg's own output, with automatic libx264 fallback on
+  early failure.
+- **Transport-stall + overload honesty** (previous stage) — frames advancing
+  with frozen bytes ⇒ "Transport stalled"; sustained overload fails with a
+  recommendation instead of restart-looping.
+
+I cannot reproduce the 68-minute failure in this sandbox (no device, no
+RTMPS endpoint). The instrumentation above is exactly what will catch it
+on-device: run Stage C (90 min) of `SOAK-TEST-PROCEDURE.md` and read the
+DIAG `drift=` values.
+
+## 2. Features implemented this round
+
+- Persistent **Stream Projects** home screen (now the launcher):
+  create / open / rename / duplicate / delete (with confirmation).
+  Each project durably stores video, playlist, destination, quality, fps,
+  bitrate, volumes, mic, framing, encoder preference, and last-session
+  status. Keys remain in EncryptedSharedPreferences — one secret per
+  project, never in project files or logs.
+- **Single-active-stream policy:** attempting a second session shows a
+  dialog routing to the live dashboard; deleting/switching projects never
+  stops a running stream; the service records Stopped/Failed/Ended + time
+  back into the project.
+- Per-project video/playlist isolation (each project remembers its own
+  source via persisted SAF URI).
+
+## 3. Already verified by code audit (no change needed)
+
+- Screen-off/locked streaming: foreground service (dataSync type), partial
+  wake-lock with 12 h renewals, notification with Stop/Open actions,
+  `onTaskRemoved` handled, STOP_FOREGROUND_DETACH terminal notification.
+- Mic OFF never touches video audio (independent command path).
+- No duplicate sessions: service-level `isStreaming` guard + UI guard.
+
+## 4. NOT verified / honest limitations
+
+- **No device here**: the 68-minute failure was not reproduced; the drift
+  monitor is the instrument to confirm the fix on your phone.
+- Longest verified duration = CI build only. 30 min / 2 h / 6–7 h soaks:
+  **not performed** — procedure in `SOAK-TEST-PROCEDURE.md`.
+- Premium UI: themes + accents + project cards are in; extended animation
+  passes and full icon-set replacement are not done this round and are
+  documented as remaining (deliberately deferred behind streaming
+  reliability, per your priority order).
+- YouTube broadcast state is still not visible to the app (no fake statuses).
+
+## 5. Rollback points
+
+`baseline-v3.0-working` → `v4.0-working` → `v5.0-projects`. Any of these can
+be re-released instantly if a regression appears on your phone.
+
+========== END FILE ==========
+
+========== FILE: docs/SOAK-TEST-PROCEDURE.md ==========
+# LIVE VIP — Staged Soak Test Procedure (run on a real phone)
+
+Goal: reach a **verified** 6–7 hour uninterrupted YouTube Live session.
+This sandbox has **no Android device**, so every stage below must be run by you.
+Do NOT call the target "passed" unless the checklist items are actually observed.
+
+## Before every stage
+1. Install the latest `VideoLive-release.apk` from the `apk-latest` release (uninstall the previous build first).
+2. Fully charged phone or on charger; screen can be OFF (the app holds wake-locks and a foreground service).
+3. Good 4G/Wi-Fi. Open YouTube Studio → Go Live and keep the **Control Room** page visible.
+4. In the app: Settings → Diagnostics → copy the DIAG lines after each stage.
+
+## Stage A — 10 minutes (sanity)
+- Start stream, let it run 10 min.
+- Checklist:
+  - [ ] App status: **Streaming**; health shows **Healthy**.
+  - [ ] Encoder line shows which encoder is actually in use (software x264 or hardware MediaCodec).
+  - [ ] YouTube Control Room shows LIVE with data arriving.
+  - [ ] After stop: no crash, notification clears.
+
+## Stage B — 30 minutes (stability)
+- Checklist from Stage A, plus:
+  - [ ] Speed stays ~1.00x, encoded FPS matches target.
+  - [ ] No reconnect events in the log.
+  - [ ] Phone only mildly warm.
+
+## Stage C — 90 minutes (the earlier failure window)
+Your previous streams died between 30 s and 1 h 30 m. This stage targets that window.
+- Checklist:
+  - [ ] Stream still delivering at the 90-minute mark.
+  - [ ] If the app shows **Performance warning**, note it — the app now stops honestly instead of looping restarts.
+  - [ ] YouTube Control Room never shows "Stream ended" while the app is running.
+
+## Stage D — 3 hours (endurance)
+- Checklist:
+  - [ ] No restarts/reconnects in Diagnostics.
+  - [ ] Health stays **Healthy** (or warning noted with cause).
+  - [ ] Loop boundary passes with no gap if video loops.
+  - [ ] Screen off for the whole time.
+
+## Stage E — 6–7 hours (target)
+- Checklist:
+  - [ ] Uninterrupted delivery for the full duration.
+  - [ ] Reconnect count = 0.
+  - [ ] YouTube still shows LIVE at the end; the app shows **Streaming** the whole time.
+
+## What to report back
+- Encoder line shown by the app (exact text).
+- Health states seen (Healthy / Performance warning / Transport stalled).
+- Diagnostics: longest run seconds, reconnect count, memory, stall events.
+- Screenshot of YouTube Control Room at ~1 h and at the end.
+
+## Important honesty note
+Until Stage E passes on-device with that evidence, the 6–7 h target is an
+**engineering goal, not a verified result** — per your instruction, nothing here
+is claimed as tested.
+
+========== END FILE ==========
+
+========== FILE: gradle.properties ==========
+org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+org.gradle.parallel=true
+android.useAndroidX=true
+android.nonTransitiveRClass=true
+kotlin.code.style=official
+
+========== END FILE ==========
+
+========== FILE: gradle/wrapper/gradle-wrapper.jar ==========
+[BINARY FILE — content not dumped as text]
+Type: jar (binary, content not dumped)
+Size: 47623 bytes
+Description: Standard Gradle wrapper bootstrap binary (unmodified upstream artifact).
+
+========== END FILE ==========
+
+========== FILE: gradle/wrapper/gradle-wrapper.properties ==========
+distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-bin.zip
+networkTimeout=10000
+validateDistributionUrl=true
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+
+========== END FILE ==========
+
+========== FILE: gradlew ==========
+#!/bin/sh
+
+#
+# Copyright © 2015 the original authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+##############################################################################
+#
+#   gradlew start up script for POSIX generated by Gradle.
+#
+#   Important for running:
+#
+#   (1) You need a POSIX-compliant shell to run this script. If your /bin/sh is
+#       noncompliant, but you have some other compliant shell such as ksh or
+#       bash, then to run this script, type that shell name before the whole
+#       command line, like:
+#
+#           ksh gradlew
+#
+#       Busybox and similar reduced shells will NOT work, because this script
+#       requires all of these POSIX shell features:
+#         * functions;
+#         * expansions «$var», «${var}», «${var:-default}», «${var+SET}»,
+#           «${var#prefix}», «${var%suffix}», and «$( cmd )»;
+#         * compound commands having a testable exit status, especially «case»;
+#         * various built-in commands including «command», «set», and «ulimit».
+#
+#   Important for patching:
+#
+#   (2) This script targets any POSIX shell, so it avoids extensions provided
+#       by Bash, Ksh, etc; in particular arrays are avoided.
+#
+#       The "traditional" practice of packing multiple parameters into a
+#       space-separated string is a well documented source of bugs and security
+#       problems, so this is (mostly) avoided, by progressively accumulating
+#       options in "$@", and eventually passing that to Java.
+#
+#       Where the inherited environment variables (DEFAULT_JVM_OPTS, JAVA_OPTS,
+#       and GRADLE_OPTS) rely on word-splitting, this is performed explicitly;
+#       see the in-line comments for details.
+#
+#       There are tweaks for specific operating systems such as AIX, CygWin,
+#       Darwin, MinGW, and NonStop.
+#
+#   (3) This script is generated from the Groovy template
+#       https://github.com/gradle/gradle/blob/3d91ce3b8caaf77ad09f381f43615b715b53f72c/platforms/jvm/plugins-application/src/main/resources/org/gradle/api/internal/plugins/unixStartScript.txt
+#       within the Gradle project.
+#
+#       You can find Gradle at https://github.com/gradle/gradle/.
+#
+##############################################################################
+
+# Attempt to set APP_HOME
+
+# Resolve links: $0 may be a link
+app_path=$0
+
+# Need this for daisy-chained symlinks.
+while
+    APP_HOME=${app_path%"${app_path##*/}"}  # leaves a trailing /; empty if no leading path
+    [ -h "$app_path" ]
+do
+    ls=$( ls -ld "$app_path" )
+    link=${ls#*' -> '}
+    case $link in             #(
+      /*)   app_path=$link ;; #(
+      *)    app_path=$APP_HOME$link ;;
+    esac
+done
+
+# This is normally unused
+# shellcheck disable=SC2034
+APP_BASE_NAME=${0##*/}
+# Discard cd standard output in case $CDPATH is set (https://github.com/gradle/gradle/issues/25036)
+APP_HOME=$( cd -P "${APP_HOME:-./}" > /dev/null && printf '%s\n' "$PWD" ) || exit
+
+# Use the maximum available, or set MAX_FD != -1 to use that value.
+MAX_FD=maximum
+
+warn () {
+    echo "$*"
+} >&2
+
+die () {
+    echo
+    echo "$*"
+    echo
+    exit 1
+} >&2
+
+# OS specific support (must be 'true' or 'false').
+cygwin=false
+msys=false
+darwin=false
+nonstop=false
+case "$( uname )" in                #(
+  CYGWIN* )         cygwin=true  ;; #(
+  Darwin* )         darwin=true  ;; #(
+  MSYS* | MINGW* )  msys=true    ;; #(
+  NONSTOP* )        nonstop=true ;;
+esac
+
+
+
+# Determine the Java command to use to start the JVM.
+if [ -n "$JAVA_HOME" ] ; then
+    if [ -x "$JAVA_HOME/jre/sh/java" ] ; then
+        # IBM's JDK on AIX uses strange locations for the executables
+        JAVACMD=$JAVA_HOME/jre/sh/java
+    else
+        JAVACMD=$JAVA_HOME/bin/java
+    fi
+    if [ ! -x "$JAVACMD" ] ; then
+        die "ERROR: JAVA_HOME is set to an invalid directory: $JAVA_HOME
+
+Please set the JAVA_HOME variable in your environment to match the
+location of your Java installation."
+    fi
+else
+    JAVACMD=java
+    if ! command -v java >/dev/null 2>&1
+    then
+        die "ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+
+Please set the JAVA_HOME variable in your environment to match the
+location of your Java installation."
+    fi
+fi
+
+# Increase the maximum file descriptors if we can.
+if ! "$cygwin" && ! "$darwin" && ! "$nonstop" ; then
+    case $MAX_FD in #(
+      max*)
+        # In POSIX sh, ulimit -H is undefined. That's why the result is checked to see if it worked.
+        # shellcheck disable=SC2039,SC3045
+        MAX_FD=$( ulimit -H -n ) ||
+            warn "Could not query maximum file descriptor limit"
+    esac
+    case $MAX_FD in  #(
+      '' | soft) :;; #(
+      *)
+        # In POSIX sh, ulimit -n is undefined. That's why the result is checked to see if it worked.
+        # shellcheck disable=SC2039,SC3045
+        ulimit -n "$MAX_FD" ||
+            warn "Could not set maximum file descriptor limit to $MAX_FD"
+    esac
+fi
+
+# Collect all arguments for the java command, stacking in reverse order:
+#   * args from the command line
+#   * the main class name
+#   * -classpath
+#   * -D...appname settings
+#   * --module-path (only if needed)
+#   * DEFAULT_JVM_OPTS, JAVA_OPTS, and GRADLE_OPTS environment variables.
+
+# For Cygwin or MSYS, switch paths to Windows format before running java
+if "$cygwin" || "$msys" ; then
+    APP_HOME=$( cygpath --path --mixed "$APP_HOME" )
+
+    JAVACMD=$( cygpath --unix "$JAVACMD" )
+
+    # Now convert the arguments - kludge to limit ourselves to /bin/sh
+    for arg do
+        if
+            case $arg in                                #(
+              -*)   false ;;                            # don't mess with options #(
+              /?*)  t=${arg#/} t=/${t%%/*}              # looks like a POSIX filepath
+                    [ -e "$t" ] ;;                      #(
+              *)    false ;;
+            esac
+        then
+            arg=$( cygpath --path --ignore --mixed "$arg" )
+        fi
+        # Roll the args list around exactly as many times as the number of
+        # args, so each arg winds up back in the position where it started, but
+        # possibly modified.
+        #
+        # NB: a `for` loop captures its iteration list before it begins, so
+        # changing the positional parameters here affects neither the number of
+        # iterations, nor the values presented in `arg`.
+        shift                   # remove old arg
+        set -- "$@" "$arg"      # push replacement arg
+    done
+fi
+
+
+# Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
+DEFAULT_JVM_OPTS='-Dfile.encoding=UTF-8 "-Xmx64m" "-Xms64m"'
+
+# Collect all arguments for the java command:
+#   * DEFAULT_JVM_OPTS, JAVA_OPTS, and optsEnvironmentVar are not allowed to contain shell fragments,
+#     and any embedded shellness will be escaped.
+#   * For example: A user cannot expect ${Hostname} to be expanded, as it is an environment variable and will be
+#     treated as '${Hostname}' itself on the command line.
+
+set -- \
+        "-Dorg.gradle.appname=$APP_BASE_NAME" \
+        -jar "$APP_HOME/gradle/wrapper/gradle-wrapper.jar" \
+        "$@"
+
+# Stop when "xargs" is not available.
+if ! command -v xargs >/dev/null 2>&1
+then
+    die "xargs is not available"
+fi
+
+# Use "xargs" to parse quoted args.
+#
+# With -n1 it outputs one arg per line, with the quotes and backslashes removed.
+#
+# In Bash we could simply go:
+#
+#   readarray ARGS < <( xargs -n1 <<<"$var" ) &&
+#   set -- "${ARGS[@]}" "$@"
+#
+# but POSIX shell has neither arrays nor command substitution, so instead we
+# post-process each arg (as a line of input to sed) to backslash-escape any
+# character that might be a shell metacharacter, then use eval to reverse
+# that process (while maintaining the separation between arguments), and wrap
+# the whole thing up as a single "set" statement.
+#
+# This will of course break if any of these variables contains a newline or
+# an unmatched quote.
+#
+
+eval "set -- $(
+        printf '%s\n' "$DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS" |
+        xargs -n1 |
+        sed ' s~[^-[:alnum:]+,./:=@_]~\\&~g; ' |
+        tr '\n' ' '
+    )" '"$@"'
+
+exec "$JAVACMD" "$@"
+
+========== END FILE ==========
+
