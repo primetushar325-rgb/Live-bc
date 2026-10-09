@@ -32,6 +32,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.videolive.app.data.PlaylistRepository
+import com.videolive.app.data.ProjectStore
 import com.videolive.app.data.SecurePrefs
 import com.videolive.app.data.SettingsRepository
 import com.videolive.app.data.ThemeStore
@@ -61,7 +62,16 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_PROJECT_ID = "project_id"
+        const val EXTRA_PROJECT_NAME = "project_name"
+    }
+
     private lateinit var settingsRepo: SettingsRepository
+
+    /** The stream project currently loaded into the dashboard (null = legacy
+     * single-configuration mode opened directly). */
+    private var activeProjectId: String? = null
 
     private var keyVisible = false
     private var suppressMicListener = false
@@ -143,6 +153,19 @@ class MainActivity : AppCompatActivity() {
         ThemeEngine.apply(this)
         setContentView(R.layout.activity_main)
         settingsRepo = SettingsRepository(this)
+
+        // Stream project support: ProjectsActivity already applied the saved
+        // snapshot to the global state before launching us; here we just
+        // remember which project this dashboard represents.
+        activeProjectId = intent.getStringExtra(EXTRA_PROJECT_ID)
+        if (activeProjectId != null) {
+            val projectName = intent.getStringExtra(EXTRA_PROJECT_NAME).orEmpty()
+            findViewById<TextView>(R.id.txtHeaderSubtitle).text =
+                if (projectName.isNotEmpty()) "Project: $projectName"
+                else getString(R.string.header_subtitle)
+            getSharedPreferences("vl_project_session", MODE_PRIVATE)
+                .edit().putString("active_id", activeProjectId).apply()
+        }
 
         batteryWarning = findViewById(R.id.batteryWarning)
         liveBanner = findViewById(R.id.liveBanner)
@@ -748,12 +771,32 @@ class MainActivity : AppCompatActivity() {
      */
     private fun validateAndStart() {
         if (StreamService.isStreaming) {
-            toast("A stream is already running.")
+            // Single-active-stream policy: never a second encoder or RTMP
+            // session. Offer the live dashboard instead of a plain toast.
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.projects_already_live_title)
+                .setMessage(R.string.projects_already_live_body)
+                .setPositiveButton(R.string.projects_open_live) { _, _ ->
+                    startActivity(Intent(this, LiveActivity::class.java))
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
             return
         }
         if (startInProgress) {
             toast("Please wait — the previous START is still being prepared.")
             return
+        }
+        // Persist the dashboard configuration into the stream project BEFORE
+        // preparing, so the exact settings used are what survives restarts.
+        // (Snapshot only — the running engine is not touched.)
+        activeProjectId?.let { pid ->
+            ProjectStore.snapshotCurrentInto(
+                this,
+                pid,
+                "Streaming",
+                etStreamKey.text.toString().trim().ifEmpty { null }
+            )
         }
         // Phase 3: playlist sessions prepare their own items (with cache
         // reuse) inside the service — no pre-selected single video needed.
@@ -938,7 +981,7 @@ class MainActivity : AppCompatActivity() {
                     "(${if (loaded?.source?.isTemporaryCopy == true) "cache bridge" else "direct read"})"
             }
         )
-        StreamService.start(this, config)
+        StreamService.start(this, config, activeProjectId)
         // The service owns the session from here; its own isStreaming guard
         // rejects any duplicate START.
         startInProgress = false

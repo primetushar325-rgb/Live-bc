@@ -70,6 +70,7 @@ class StreamService : Service() {
         const val ACTION_START = "com.videolive.app.action.START_STREAM"
         const val ACTION_STOP = "com.videolive.app.action.STOP_STREAM"
         const val EXTRA_CONFIG = "stream_config"
+        const val EXTRA_PROJECT_ID = "project_id"
         const val CHANNEL_ID = "vl_live_channel"
         private const val NOTIFICATION_ID = 1001
         private const val MAX_ATTEMPTS = 5
@@ -95,11 +96,14 @@ class StreamService : Service() {
         /** Last config used, so the Live screen can offer a Retry on ERROR. */
         @Volatile
         private var lastConfig: StreamConfig? = null
+        private var lastProjectId: String? = null
 
-        fun start(context: Context, config: StreamConfig) {
+        fun start(context: Context, config: StreamConfig, projectId: String? = lastProjectId) {
+            lastProjectId = projectId
             val intent = Intent(context, StreamService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_CONFIG, config)
+                .putExtra(EXTRA_PROJECT_ID, projectId)
             ContextCompat.startForegroundService(context, intent)
         }
 
@@ -162,6 +166,9 @@ class StreamService : Service() {
     // automatic software fallback. encoderInUse is parsed from real FFmpeg
     // output, never assumed.
     @Volatile private var encoderInUse = ""
+
+    /** Stream project this session belongs to (null = legacy direct start). */
+    private var projectId: String? = null
     @Volatile private var forceSoftware = false
     private var attemptUsedHw = false
 
@@ -215,6 +222,7 @@ class StreamService : Service() {
                     return START_NOT_STICKY
                 }
                 lastConfig = config
+                projectId = intent.getStringExtra(EXTRA_PROJECT_ID) ?: lastProjectId
                 stopRequested = false
                 liveNotified = false
                 playlistMode = false
@@ -1107,6 +1115,19 @@ class StreamService : Service() {
         isStreaming = false
         tickerJob?.cancel()
         stopThermalMonitor()
+        // Honest last-session status back to the stream project (if any).
+        projectId?.let { pid ->
+            val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
+                .format(java.util.Date())
+            val status = when (state.phase) {
+                Phase.ERROR -> "Failed at $stamp"
+                Phase.STOPPING -> "Stopped at $stamp"
+                else -> "Ended at $stamp"
+            }
+            runCatching {
+                com.videolive.app.data.ProjectStore.setStatus(this, pid, status)
+            }
+        }
         // Truthful terminal notification: detach the foreground service but
         // leave a dismissible, accurate end-state notification instead of a
         // stale "LIVE" badge.

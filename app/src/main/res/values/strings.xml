@@ -139,4 +139,22 @@
     <string name="row_network">Network</string>
     <string name="retry_now">RETRY NOW</string>
     <string name="youtube_confirmation_hint">This app cannot see YouTube\'s broadcast state. While the encoder is sending video, open the YouTube Live Control Room (YouTube Studio → Go Live) — a preview of your stream should appear there. If your stream does not auto-start, press GO LIVE there. Only then is the broadcast public.</string>
+
+    <!-- Stream projects -->
+    <string name="projects_title">Stream Projects</string>
+    <string name="projects_subtitle">Every stream keeps its own video, destination and settings</string>
+    <string name="projects_live_banner">● A stream is LIVE right now — tap to open the dashboard</string>
+    <string name="projects_empty_hint">No projects yet. Tap CREATE STREAM to make your first one.</string>
+    <string name="create_stream">+  CREATE STREAM</string>
+    <string name="project_name_hint">Project name (e.g. Music Live)</string>
+    <string name="create">Create</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="rename_project">Rename project</string>
+    <string name="delete_project">Delete project?</string>
+    <string name="delete_project_body">\"%1$s\" and its saved settings will be removed. A running stream is NOT stopped, and the video file itself is never deleted.</string>
+    <string name="projects_already_live_title">A stream is already live</string>
+    <string name="projects_already_live_body">Only one live session can run at a time. Stop the current stream from its dashboard before starting another project.</string>
+    <string name="projects_open_live">Open active session</string>
+    <string name="project_opened">Project \"%1$s\" loaded</string>
 </resources>
