@@ -149,6 +149,12 @@ class StreamService : Service() {
     @Volatile private var connectTimedOut = false
     @Volatile private var liveNotified = false
 
+    // Diagnostics: measured output cadence (frame delta over time delta).
+    private var prevStatFrames = 0L
+    private var prevStatTimeMs = 0L
+    @Volatile private var measuredFps = 0f
+    @Volatile private var softStallWarned = false
+
     // Playlist session bookkeeping (Phase 3).
     private var playlistMode = false
     private var playlistDurations = LongArray(0)
@@ -479,6 +485,10 @@ class StreamService : Service() {
                 // Reset per-session evidence flags.
                 everConnected = false
                 connectTimedOut = false
+                prevStatFrames = 0
+                prevStatTimeMs = 0
+                measuredFps = 0f
+                softStallWarned = false
                 var statsSeen = 0
                 var inputLogged = false
                 var encoderLogged = false
@@ -515,6 +525,21 @@ class StreamService : Service() {
                 val result = ffmpeg.run(args, stageOnLog) { st ->
                     statsSeen++
                     lastProgressAt = System.currentTimeMillis()
+
+                    // Measured output cadence (independent of FFmpeg's own fps
+                    // field): frame delta over out_time delta.
+                    if (prevStatTimeMs > 0 && st.time > prevStatTimeMs) {
+                        val dt = st.time - prevStatTimeMs
+                        if (dt >= 500) {
+                            measuredFps =
+                                (st.videoFrameNumber - prevStatFrames) * 1000f / dt
+                            prevStatFrames = st.videoFrameNumber
+                            prevStatTimeMs = st.time
+                        }
+                    } else if (prevStatTimeMs == 0L) {
+                        prevStatFrames = st.videoFrameNumber
+                        prevStatTimeMs = st.time
+                    }
                     val loops: Int
                     var itemName = config.videoName
                     if (playlistMode && totalPlaylistMs > 0) {
@@ -591,9 +616,16 @@ class StreamService : Service() {
                             )
                         }
                         if (statsSeen % 30 == 0) {
+                            // Periodic diagnostic report (Advanced Logs).
                             LogStore.event(
-                                "Stream health: frame #${st.videoFrameNumber}, ${st.videoFps} fps, " +
-                                    "${st.bitrate.toInt()} kbps, out_time ${st.time} ms, " +
+                                "DIAG: target ${config.fps} fps | measured " +
+                                    "${String.format(Locale.US, "%.1f", measuredFps)} fps | " +
+                                    "engine ${st.videoFps} fps | bitrate ${st.bitrate.toInt()} kbps " +
+                                    "(target ${config.targetBitrateKbps()}) | speed " +
+                                    "${String.format(Locale.US, "%.2f", st.speed)}x | " +
+                                    "net=${if (netOk) "OK" else "POOR"} | reconnects=$attempt | " +
+                                    "temp=${String.format(Locale.US, "%.1f", deviceTempC)}C | " +
+                                    "frame #${st.videoFrameNumber}, out_time ${st.time} ms, " +
                                     "total ${st.size} bytes, loop ${loops + 1}"
                             )
                         }
@@ -614,6 +646,7 @@ class StreamService : Service() {
                                         else -> "Sending video to YouTube..."
                                     },
                                     liveFps = st.videoFps,
+                                    measuredFps = measuredFps,
                                     liveBitrateKbps = st.bitrate.toInt(),
                                     speed = st.speed,
                                     loopCount = loops,
@@ -761,8 +794,26 @@ class StreamService : Service() {
                 }
             } else {
                 val idleMs = System.currentTimeMillis() - lastProgressAt
+                // Soft stall: warn with ALL available signals before taking
+                // any action (avoids false positives from short fluctuations).
+                if (idleMs > 10_000 && !softStallWarned) {
+                    softStallWarned = true
+                    LogStore.event(
+                        "STALL WATCH: no progress ${idleMs / 1000}s | signals: " +
+                            "measured ${String.format(Locale.US, "%.1f", measuredFps)} fps, " +
+                            "temp ${String.format(Locale.US, "%.1f", deviceTempC)}C, " +
+                            "net=${if (Net.isOnline(this@StreamService)) "OK" else "DOWN"}, " +
+                            "mic=${if (MicMixer.levelPct > 0) "active" else "idle"} — monitoring"
+                    )
+                }
                 if (idleMs > WATCHDOG_STALL_MS) {
-                    LogStore.event("No encode progress for ${idleMs / 1000}s — restarting engine")
+                    LogStore.event(
+                        "STALL CONFIRMED: no encode progress for ${idleMs / 1000}s " +
+                            "(measured ${String.format(Locale.US, "%.1f", measuredFps)} fps, " +
+                            "temp ${String.format(Locale.US, "%.1f", deviceTempC)}C, " +
+                            "net=${if (Net.isOnline(this@StreamService)) "OK" else "DOWN"}) " +
+                            "— restarting engine"
+                    )
                     ffmpeg.cancelCurrent()
                     return
                 }
@@ -842,8 +893,20 @@ class StreamService : Service() {
     private fun startTicker() {
         tickerJob?.cancel()
         tickerJob = scope.launch {
+            var renewals = 0
             while (isActive) {
                 post { it.copy(elapsedMs = System.currentTimeMillis() - startedAt) }
+                // Renew the partial wake lock well before its hard cap expires,
+                // otherwise the CPU may sleep mid-encode on long sessions.
+                val wl = wakeLock
+                if (wl != null && !wl.isHeld && isStreaming) {
+                    try {
+                        wl.acquire(12 * 60 * 60 * 1000L)
+                        renewals++
+                        LogStore.event("WakeLock renewed (#$renewals) for long session")
+                    } catch (t: Throwable) {
+                    }
+                }
                 delay(1000)
             }
         }
@@ -853,6 +916,21 @@ class StreamService : Service() {
         isStreaming = false
         tickerJob?.cancel()
         stopThermalMonitor()
+        // Truthful terminal notification: detach the foreground service but
+        // leave a dismissible, accurate end-state notification instead of a
+        // stale "LIVE" badge.
+        val terminal = when (state.phase) {
+            Phase.ERROR -> "STREAM FAILED — ${state.errorText ?: "see Advanced Logs"}"
+            Phase.STOPPING -> "STREAM STOPPED"
+            else -> "LIVE ENDED — ${state.statusText.ifEmpty { "stream stopped" }}"
+        }
+        try {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, buildNotification(terminal, live = false, terminal = true))
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        } catch (t: Throwable) {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        }
         try {
             MicMixer.stop()
         } catch (_: Throwable) {
@@ -872,8 +950,20 @@ class StreamService : Service() {
             }
         }
         wakeLock = null
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    /** If the system swipes the app away while idle, make sure nothing stale remains. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (!isStreaming) {
+            try {
+                (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+                    .cancel(NOTIFICATION_ID)
+            } catch (_: Throwable) {
+            }
+            stopSelf()
+        }
     }
 
     private fun safeClosePipe(path: String) {
@@ -910,8 +1000,12 @@ class StreamService : Service() {
         }
     }
 
-    private inline fun post(crossinline transform: (StreamUiState) -> StreamUiState) {
-        uiState.update { transform(it) }
+    private fun post(transform: (StreamUiState) -> StreamUiState) {
+        // Single source of truth: companion StateFlow (UI) + instance mirror
+        // (service-side decisions such as the terminal notification).
+        val next = transform(uiState.value)
+        uiState.value = next
+        state = next
     }
 
     private fun createChannel() {
@@ -940,7 +1034,11 @@ class StreamService : Service() {
         }
     }
 
-    private fun buildNotification(videoName: String, live: Boolean = false): Notification {
+    private fun buildNotification(
+        videoName: String,
+        live: Boolean = false,
+        terminal: Boolean = false
+    ): Notification {
         val openIntent = Intent(this, MainActivity::class.java)
             .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val openPi = PendingIntent.getActivity(
@@ -952,19 +1050,37 @@ class StreamService : Service() {
             this, 1, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notify)
-            .setContentTitle(if (live) "🔴 LIVE: $videoName" else "Preparing live stream")
-            .setContentText(if (live) "Streaming to YouTube" else "Video: $videoName")
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setSilent(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setWhen(startedAt)
-            .setUsesChronometer(true)
-            .setContentIntent(openPi)
-            .addAction(R.drawable.ic_stop, "Stop", stopPi)
-            .build()
+        return if (terminal) {
+            // End-state notification: dismissible, no chronometer, no Stop
+            // action — never claims LIVE after the work is done.
+            NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notify)
+                .setContentTitle("LIVE VIP")
+                .setContentText(videoName)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(videoName))
+                .setOngoing(false)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setShowWhen(true)
+                .setWhen(System.currentTimeMillis())
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setContentIntent(openPi)
+                .build()
+        } else {
+            NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notify)
+                .setContentTitle(if (live) "🔴 LIVE: $videoName" else "Preparing live stream")
+                .setContentText(if (live) "Streaming to YouTube" else "Video: $videoName")
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setWhen(startedAt)
+                .setUsesChronometer(true)
+                .setContentIntent(openPi)
+                .addAction(R.drawable.ic_stop, "Stop", stopPi)
+                .build()
+        }
     }
 
     override fun onDestroy() {

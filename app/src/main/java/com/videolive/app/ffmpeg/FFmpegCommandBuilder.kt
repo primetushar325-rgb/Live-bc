@@ -186,10 +186,17 @@ object FFmpegCommandBuilder {
                 "scale=$w:$h:force_original_aspect_ratio=increase," +
                     "crop=$w:$h"
         }
+        // CFR normalization: phone recordings are frequently variable-frame-
+        // rate. `-re` paces by timestamps, so VFR input produces periodic
+        // pacing jitter at the muxer (visible as ~1 s freezes on the server
+        // while the local file plays fine). A constant-rate `fps` filter is
+        // the standard fix and makes output cadence exact.
+        val cfr = ",fps=${config.fps}"
+
         val zoom = config.zoomPct.coerceIn(100, 300) / 100f
         val panX = config.panXPct.coerceIn(-100, 100) / 100f
         val panY = config.panYPct.coerceIn(-100, 100) / 100f
-        if (zoom <= 1.001f && panX == 0f && panY == 0f) return "$base,setsar=1"
+        if (zoom <= 1.001f && panX == 0f && panY == 0f) return "$base$cfr,setsar=1"
 
         val z = String.format(Locale.US, "%.2f", zoom)
         // Zoom in around the (optionally panned) centre of the framed canvas.
@@ -197,8 +204,8 @@ object FFmpegCommandBuilder {
         val py = String.format(Locale.US, "%.3f", panY)
         return base + "," +
             "scale=iw*$z:ih*$z," +
-            "crop=$w:$h:(iw-$w)/2+$px*(iw-$w)/2:(ih-$h)/2+$py*(ih-$h)/2," +
-            "setsar=1"
+            "crop=$w:$h:(iw-$w)/2+$px*(iw-$w)/2:(ih-$h)/2+$py*(ih-$h)/2" +
+            cfr + ",setsar=1"
     }
 
     /** Combines server + key (or the advanced full URL) into the final

@@ -32,6 +32,7 @@ data class StreamUiState(
     val configuredBitrateKbps: Int = 0,
     val liveFps: Float = 0f,
     val liveBitrateKbps: Int = 0,
+    val measuredFps: Float = 0f,
     val speed: Double = 0.0,
     val attempt: Int = 0,
     val micActive: Boolean = false,

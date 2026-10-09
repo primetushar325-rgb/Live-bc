@@ -6,6 +6,10 @@ import com.arthenica.ffmpegkit.FFmpegSessionCompleteCallback
 import com.arthenica.ffmpegkit.LogCallback
 import com.arthenica.ffmpegkit.Statistics
 import com.arthenica.ffmpegkit.StatisticsCallback
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionHandler
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -18,10 +22,30 @@ sealed class RunResult {
 /**
  * Owns the single live FFmpeg session. Execution is in-process (FFmpegKit links
  * FFmpeg natively) — there is no external process that can die unnoticed.
+ *
+ * CRITICAL THREADING (stutter fix, measured rationale):
+ * ffmpeg-kit invokes the log/statistics callbacks ON THE FFmpeg EXECUTION
+ * THREAD. Any work done there (regex masking, date formatting, synchronized
+ * buffers, state posts) directly stalls decode/encode/mux for that moment.
+ * Progress lines arrive several times per second — exactly the cadence of the
+ * reported freezes. Therefore every callback here only ENQUEUES a tiny task;
+ * one dedicated dispatcher thread drains the queue and does the real work.
+ * The queue is bounded and drops diagnostic lines under pressure instead of
+ * ever letting diagnostics block the media pipeline.
  */
 class FFmpegManager {
 
     @Volatile private var session: FFmpegSession? = null
+
+    private val callbackExecutor = ThreadPoolExecutor(
+        1, 1,
+        0L, TimeUnit.MILLISECONDS,
+        LinkedBlockingQueue(4000),
+        { r -> Thread(r, "vl-ffmpeg-callbacks") },
+        RejectedExecutionHandler { _, _ ->
+            // Diagnostics may be dropped; the encoder never waits.
+        }
+    )
 
     val ffmpegVersion: String
         get() = try {
@@ -50,29 +74,33 @@ class FFmpegManager {
         onStats: (Statistics) -> Unit
     ): RunResult = suspendCancellableCoroutine { cont ->
         val complete = FFmpegSessionCompleteCallback { s ->
-            val result = when {
-                s.returnCode == null -> RunResult.Failed(
-                    ClassifiedError(
-                        com.videolive.app.ffmpeg.ErrorKind.ENGINE,
-                        "Streaming engine stopped unexpectedly."
+            callbackExecutor.execute {
+                val result = when {
+                    s.returnCode == null -> RunResult.Failed(
+                        ClassifiedError(
+                            com.videolive.app.ffmpeg.ErrorKind.ENGINE,
+                            "Streaming engine stopped unexpectedly."
+                        )
                     )
-                )
-                s.returnCode.isValueCancel -> RunResult.Cancelled
-                s.returnCode.isValueSuccess -> RunResult.Success
-                else -> RunResult.Failed(ErrorClassifier.classify(LogStore.recentTail()))
+                    s.returnCode.isValueCancel -> RunResult.Cancelled
+                    s.returnCode.isValueSuccess -> RunResult.Success
+                    else -> RunResult.Failed(ErrorClassifier.classify(LogStore.recentTail()))
+                }
+                if (cont.isActive) cont.resume(result)
             }
-            if (cont.isActive) cont.resume(result)
         }
         val logCallback = LogCallback { log ->
             val message = log.message ?: ""
-            LogStore.append(message)
-            try {
-                onLog(message)
-            } catch (_: Throwable) {
+            callbackExecutor.execute {
+                LogStore.append(message)
+                try {
+                    onLog(message)
+                } catch (_: Throwable) {
+                }
             }
         }
         val statsCallback = StatisticsCallback { st ->
-            onStats(st)
+            callbackExecutor.execute { onStats(st) }
         }
 
         val s = FFmpegSession.create(
