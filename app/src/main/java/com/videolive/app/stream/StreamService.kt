@@ -155,6 +155,9 @@ class StreamService : Service() {
     @Volatile private var measuredFps = 0f
     @Volatile private var softStallWarned = false
 
+    /** Service-side mirror of the UI state (terminal notification text etc). */
+    @Volatile private var state = StreamUiState()
+
     // Playlist session bookkeeping (Phase 3).
     private var playlistMode = false
     private var playlistDurations = LongArray(0)
@@ -528,17 +531,18 @@ class StreamService : Service() {
 
                     // Measured output cadence (independent of FFmpeg's own fps
                     // field): frame delta over out_time delta.
-                    if (prevStatTimeMs > 0 && st.time > prevStatTimeMs) {
-                        val dt = st.time - prevStatTimeMs
+                    val statFrames = st.videoFrameNumber.toLong()
+                    val statTimeMs = st.time.toLong()
+                    if (prevStatTimeMs > 0 && statTimeMs > prevStatTimeMs) {
+                        val dt = statTimeMs - prevStatTimeMs
                         if (dt >= 500) {
-                            measuredFps =
-                                (st.videoFrameNumber - prevStatFrames) * 1000f / dt
-                            prevStatFrames = st.videoFrameNumber
-                            prevStatTimeMs = st.time
+                            measuredFps = (statFrames - prevStatFrames) * 1000f / dt
+                            prevStatFrames = statFrames
+                            prevStatTimeMs = statTimeMs
                         }
                     } else if (prevStatTimeMs == 0L) {
-                        prevStatFrames = st.videoFrameNumber
-                        prevStatTimeMs = st.time
+                        prevStatFrames = statFrames
+                        prevStatTimeMs = statTimeMs
                     }
                     val loops: Int
                     var itemName = config.videoName
