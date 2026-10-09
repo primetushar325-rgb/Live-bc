@@ -158,4 +158,42 @@
         <item name="vlPreviewBg">#030E14</item>
         <item name="vlOnAccent">#062028</item>
     </style>
+
+    <!-- Accent overlays: applied on top of any base theme via applyStyle so
+         users can combine any theme with any coordinated accent. -->
+    <style name="Accent_Purple">
+        <item name="vlAccent">#7C4DFF</item>
+        <item name="vlAccentSoft">#B388FF</item>
+        <item name="vlOnAccent">#FFFFFF</item>
+    </style>
+
+    <style name="Accent_Cyan">
+        <item name="vlAccent">#00C2FF</item>
+        <item name="vlAccentSoft">#22D3EE</item>
+        <item name="vlOnAccent">#062028</item>
+    </style>
+
+    <style name="Accent_Blue">
+        <item name="vlAccent">#2979FF</item>
+        <item name="vlAccentSoft">#448AFF</item>
+        <item name="vlOnAccent">#FFFFFF</item>
+    </style>
+
+    <style name="Accent_Teal">
+        <item name="vlAccent">#00BFA5</item>
+        <item name="vlAccentSoft">#26A69A</item>
+        <item name="vlOnAccent">#04211C</item>
+    </style>
+
+    <style name="Accent_Green">
+        <item name="vlAccent">#00C853</item>
+        <item name="vlAccentSoft">#66BB6A</item>
+        <item name="vlOnAccent">#03230F</item>
+    </style>
+
+    <style name="Accent_Amber">
+        <item name="vlAccent">#FFB300</item>
+        <item name="vlAccentSoft">#FFCA28</item>
+        <item name="vlOnAccent">#241A02</item>
+    </style>
 </resources>

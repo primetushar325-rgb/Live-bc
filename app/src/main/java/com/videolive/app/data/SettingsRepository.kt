@@ -2,6 +2,7 @@ package com.videolive.app.data
 
 import android.content.Context
 import com.videolive.app.model.BitrateMode
+import com.videolive.app.model.EncoderPref
 import com.videolive.app.model.FrameMode
 import com.videolive.app.model.LoopMode
 import com.videolive.app.model.Orientation
@@ -88,6 +89,13 @@ class SettingsRepository(context: Context) {
     var playlistEnabled: Boolean
         get() = prefs.getBoolean("playlist_enabled", true)
         set(value) = prefs.edit().putBoolean("playlist_enabled", value).apply()
+
+    // ---- Phase 1 (final): encoder preference ----
+    var encoderPref: EncoderPref
+        get() = runCatching {
+            EncoderPref.valueOf(prefs.getString("encoder_pref", "AUTO") ?: "AUTO")
+        }.getOrDefault(EncoderPref.AUTO)
+        set(value) = prefs.edit().putString("encoder_pref", value.name).apply()
 
     // ---- Phase 7: thermal guard thresholds (°C, battery sensor) ----
     var thermalWarnC: Int

@@ -44,6 +44,9 @@ class LiveActivity : AppCompatActivity() {
     private lateinit var txtLastError: TextView
     private lateinit var rowMicLevel: View
     private lateinit var txtMicLevel: TextView
+    private lateinit var txtEncoder: TextView
+    private lateinit var txtHealth: TextView
+    private lateinit var txtPerfWarning: TextView
 
     private var errorHandled = false
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -75,6 +78,9 @@ class LiveActivity : AppCompatActivity() {
         txtLastError = findViewById(R.id.txtLastError)
         rowMicLevel = findViewById(R.id.rowMicLevel)
         txtMicLevel = findViewById(R.id.txtMicLevel)
+        txtEncoder = findViewById(R.id.txtEncoder)
+        txtHealth = findViewById(R.id.txtHealth)
+        txtPerfWarning = findViewById(R.id.txtPerfWarning)
 
         findViewById<TextView>(R.id.btnStopLive).setOnClickListener { confirmStop() }
         findViewById<ImageButton>(R.id.btnLiveSettings).setOnClickListener {
@@ -186,6 +192,33 @@ class LiveActivity : AppCompatActivity() {
         txtDeviceTemp.text = if (state.deviceTempC > 0.0) {
             String.format(java.util.Locale.US, "%.1f°C", state.deviceTempC)
         } else "—"
+
+        // Stage 1: verified encoder + honest health state.
+        txtEncoder.text = state.encoderName.ifEmpty { "—" }
+        val healthShown = when (state.phase) {
+            Phase.RECONNECTING -> "Recovering"
+            Phase.ERROR -> "Failed"
+            Phase.STOPPING -> "Stopping"
+            Phase.STOPPED -> "Stopped"
+            else -> state.health.ifEmpty { "—" }
+        }
+        txtHealth.text = healthShown
+        txtHealth.setTextColor(
+            ContextCompat.getColor(
+                this,
+                when (healthShown) {
+                    "Healthy" -> R.color.green
+                    "Failed", "Transport stalled" -> R.color.red
+                    else -> R.color.amber
+                }
+            )
+        )
+        if (state.perfWarning.isNotEmpty()) {
+            txtPerfWarning.visibility = View.VISIBLE
+            txtPerfWarning.text = "⚠ " + state.perfWarning
+        } else {
+            txtPerfWarning.visibility = View.GONE
+        }
 
         // Phase 5: live microphone input level.
         if (state.micActive) {

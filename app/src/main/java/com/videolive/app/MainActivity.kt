@@ -507,7 +507,7 @@ class MainActivity : AppCompatActivity() {
                 val picked = themes[which]
                 dialog.dismiss()
                 if (picked != current) {
-                    ThemeStore.save(this, picked)
+                    ThemeStore.saveTheme(this, picked)
                     recreate()
                 }
             }
@@ -896,7 +896,8 @@ class MainActivity : AppCompatActivity() {
                 zoomPct = settingsRepo.zoomPct,
                 panXPct = settingsRepo.panXPct,
                 panYPct = settingsRepo.panYPct,
-                micVolumePct = settingsRepo.micVolumePct
+                micVolumePct = settingsRepo.micVolumePct,
+                encoderPref = settingsRepo.encoderPref
             )
         } else {
             val single = loaded ?: run {
@@ -923,7 +924,8 @@ class MainActivity : AppCompatActivity() {
                 zoomPct = settingsRepo.zoomPct,
                 panXPct = settingsRepo.panXPct,
                 panYPct = settingsRepo.panYPct,
-                micVolumePct = settingsRepo.micVolumePct
+                micVolumePct = settingsRepo.micVolumePct,
+                encoderPref = settingsRepo.encoderPref
             )
         }
 

@@ -44,6 +44,26 @@ object FFmpegRuntime {
 
     @Volatile private var cached: Report? = null
     @Volatile private var encodersLogged = false
+    @Volatile var hwH264Available: Boolean? = null
+        private set
+
+    /** True only when the packaged FFmpeg build lists a real Android hardware
+     * H.264 encoder (h264_mediacodec / v4l2m2m). Used by AUTO encoder mode. */
+    fun hasHardwareH264(): Boolean {
+        hwH264Available?.let { return it }
+        return try {
+            val out = FFmpegKit.execute("-hide_banner -encoders").output.orEmpty()
+            val hw = out.lineSequence().any { line ->
+                (line.contains("h264_mediacodec") || line.contains("h264_v4l2m2m")) &&
+                    line.contains("V")
+            }
+            hwH264Available = hw
+            hw
+        } catch (t: Throwable) {
+            hwH264Available = false
+            false
+        }
+    }
 
     /**
      * P1.10 evidence: enumerate which H.264 encoders this FFmpeg build
@@ -57,6 +77,10 @@ object FFmpegRuntime {
         try {
             val session = FFmpegKit.execute("-hide_banner -encoders")
             val out = session.output.orEmpty()
+            hwH264Available = out.lineSequence().any { line ->
+                (line.contains("h264_mediacodec") || line.contains("h264_v4l2m2m")) &&
+                    line.contains("V")
+            }
             val h264 = out.lineSequence()
                 .map { it.trim() }
                 .filter { it.contains("H.264") || it.contains("h264") }

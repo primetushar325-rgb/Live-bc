@@ -8,6 +8,10 @@ enum class LoopMode { ONE, ALL, SEQUENTIAL, SHUFFLE }
 
 enum class BitrateMode { AUTO, MANUAL }
 
+/** Encoder preference. AUTO probes the device and prefers the verified
+ * hardware path with an automatic software fallback. */
+enum class EncoderPref { AUTO, HARDWARE, SOFTWARE }
+
 /** Preview-studio framing. Applied to the encoder at stream start. */
 enum class FrameMode { FIT, FILL }
 

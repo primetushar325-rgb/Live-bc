@@ -5,8 +5,12 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.ImageButton
 import android.widget.SeekBar
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -14,7 +18,9 @@ import com.videolive.app.util.ThemeEngine
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import com.videolive.app.data.SettingsRepository
+import com.videolive.app.data.ThemeStore
 import com.videolive.app.ffmpeg.FFmpegRuntime
+import com.videolive.app.model.EncoderPref
 import com.videolive.app.util.DeviceCaps
 
 class SettingsActivity : AppCompatActivity() {
@@ -79,6 +85,76 @@ class SettingsActivity : AppCompatActivity() {
         switchPlaylist.isChecked = settingsRepo.playlistEnabled
         switchPlaylist.setOnCheckedChangeListener { _, checked ->
             settingsRepo.playlistEnabled = checked
+        }
+
+        // ---- Encoder preference (Stage 1) ----------------------------------
+        val spinnerEncoder = findViewById<Spinner>(R.id.spinnerEncoder)
+        spinnerEncoder.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            arrayOf(
+                "Auto (hardware if verified, else software)",
+                "Hardware (h264_mediacodec)",
+                "Software (libx264)"
+            )
+        )
+        spinnerEncoder.setSelection(
+            when (settingsRepo.encoderPref) {
+                EncoderPref.HARDWARE -> 1
+                EncoderPref.SOFTWARE -> 2
+                else -> 0
+            }
+        )
+        spinnerEncoder.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                settingsRepo.encoderPref = when (pos) {
+                    1 -> EncoderPref.HARDWARE
+                    2 -> EncoderPref.SOFTWARE
+                    else -> EncoderPref.AUTO
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // ---- Appearance: theme + accent ------------------------------------
+        val themes = ThemeStore.Theme.values()
+        val accents = ThemeStore.Accent.values()
+        val spinnerTheme = findViewById<Spinner>(R.id.spinnerThemeMode)
+        val spinnerAccent = findViewById<Spinner>(R.id.spinnerAccent)
+        spinnerTheme.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            themes.map { it.label }.toTypedArray()
+        )
+        spinnerAccent.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            accents.map { it.label }.toTypedArray()
+        )
+        spinnerTheme.setSelection(themes.indexOf(ThemeStore.savedTheme(this)))
+        spinnerAccent.setSelection(accents.indexOf(ThemeStore.accent(this)))
+        spinnerTheme.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val t = themes[pos]
+                if (t != ThemeStore.savedTheme(this@SettingsActivity)) {
+                    ThemeStore.saveTheme(this@SettingsActivity, t)
+                    recreate() // cosmetic only — the live stream is untouched
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        spinnerAccent.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val a = accents[pos]
+                if (a != ThemeStore.accent(this@SettingsActivity)) {
+                    ThemeStore.saveAccent(this@SettingsActivity, a)
+                    recreate()
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
         val batteryStatus = findViewById<TextView>(R.id.txtBatteryStatus)

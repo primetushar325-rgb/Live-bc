@@ -158,6 +158,19 @@ class StreamService : Service() {
     private var overloadStreak = 0
     private var overloadWarned = false
 
+    // Encoder selection (Stage 1): hardware when available+verified, with an
+    // automatic software fallback. encoderInUse is parsed from real FFmpeg
+    // output, never assumed.
+    @Volatile private var encoderInUse = ""
+    @Volatile private var forceSoftware = false
+    private var attemptUsedHw = false
+
+    // Transport health: output bytes must grow while frames are encoded.
+    // Frames advancing with frozen byte counter = RTMPS writes blocked.
+    private var prevBytes = -1L
+    private var prevBytesFrames = 0L
+    private var transportStallStreak = 0
+
     /** Service-side mirror of the UI state (terminal notification text etc). */
     @Volatile private var state = StreamUiState()
 
@@ -203,6 +216,8 @@ class StreamService : Service() {
                 thermalWarnShown = false
                 thermalCritFired = false
                 deviceTempC = 0.0
+                encoderInUse = ""
+                forceSoftware = false
                 startedAt = System.currentTimeMillis()
                 isStreaming = true
                 ServiceCompat.startForeground(
@@ -285,6 +300,10 @@ class StreamService : Service() {
             // One-time, background capability probe: is a hardware H.264
             // encoder even packaged? (evidence for the hw-encoder question)
             withContext(Dispatchers.IO) { FFmpegRuntime.logEncoderCapabilities() }
+            val hwPresent = withContext(Dispatchers.IO) { FFmpegRuntime.hasHardwareH264() }
+            LogStore.event(
+                "Encoder preference: ${config.encoderPref} | hardware H.264 present: $hwPresent"
+            )
 
             // loadOnce / prepareBatch are single-flight: even if something else
             // is preparing right now, this waits and reuses the result — a
@@ -454,6 +473,17 @@ class StreamService : Service() {
                     MicMixer.switchPipe(freshPipe)
                 }
 
+                val useHw = when (config.encoderPref) {
+                    com.videolive.app.model.EncoderPref.SOFTWARE -> false
+                    com.videolive.app.model.EncoderPref.HARDWARE -> hwPresent
+                    com.videolive.app.model.EncoderPref.AUTO -> hwPresent && !forceSoftware
+                }
+                attemptUsedHw = useHw
+                LogStore.event(
+                    "Encoder selected for this attempt: " +
+                        if (useHw) "h264_mediacodec (hardware)" else "libx264 (software)"
+                )
+
                 val args: List<String> = if (playlistMode) {
                     // Concat demuxer list for this session's play order. The
                     // list file lives next to the cache copies; it is rebuilt
@@ -472,7 +502,8 @@ class StreamService : Service() {
                         info.hasAudio,
                         concatFile,
                         destination,
-                        if (micActive) pipePath else null
+                        if (micActive) pipePath else null,
+                        useHw
                     )
                 } else {
                     FFmpegCommandBuilder.build(
@@ -480,7 +511,8 @@ class StreamService : Service() {
                         info,
                         loaded.source.ffmpegInput,
                         destination,
-                        if (micActive) pipePath else null
+                        if (micActive) pipePath else null,
+                        useHw
                     )
                 }
                 // Full command for diagnostics — destination (contains the stream
@@ -501,6 +533,9 @@ class StreamService : Service() {
                 softStallWarned = false
                 overloadStreak = 0
                 overloadWarned = false
+                prevBytes = -1L
+                prevBytesFrames = 0L
+                transportStallStreak = 0
                 var statsSeen = 0
                 var inputLogged = false
                 var encoderLogged = false
@@ -515,6 +550,20 @@ class StreamService : Service() {
                     if (!encoderLogged && l.contains("stream #") && l.contains("->")) {
                         encoderLogged = true
                         LogStore.event("Encoder initialized (H.264/AAC mapping active)")
+                    }
+                    // Verified encoder: parsed from the REAL output mapping
+                    // line ("Video: h264 (h264_mediacodec)" / "(libx264)").
+                    if (encoderInUse.isEmpty() && l.contains("video:")) {
+                        val name = when {
+                            l.contains("h264_mediacodec") -> "h264_mediacodec (hardware)"
+                            l.contains("libx264") -> "libx264 (software)"
+                            else -> ""
+                        }
+                        if (name.isNotEmpty()) {
+                            encoderInUse = name
+                            LogStore.event("Encoder in use (verified from output): $name")
+                            post { s -> s.copy(encoderName = name) }
+                        }
                     }
                     if (!muxerLogged && l.contains("output #")) {
                         muxerLogged = true
@@ -553,6 +602,33 @@ class StreamService : Service() {
                         prevStatFrames = statFrames
                         prevStatTimeMs = statTimeMs
                     }
+
+                    // Transport check on the same window: encoded frames must
+                    // produce outgoing bytes (FLV over RTMPS). Frames advance
+                    // with a frozen byte counter = writes blocked/disconnected.
+                    val outBytes = st.size.toLong()
+                    if (prevBytes >= 0) {
+                        val framesAdvanced = statFrames > prevBytesFrames
+                        val bytesAdvanced = outBytes > prevBytes
+                        transportStallStreak =
+                            if (framesAdvanced && !bytesAdvanced) transportStallStreak + 1 else 0
+                        if (transportStallStreak == 2) {
+                            LogStore.event(
+                                "TRANSPORT STALL suspected: frames encoding but output bytes " +
+                                    "frozen at $outBytes — RTMPS write blocked or disconnected"
+                            )
+                        }
+                    }
+                    prevBytes = outBytes
+                    prevBytesFrames = statFrames
+
+                    val healthLabel = when {
+                        transportStallStreak >= 2 -> "Transport stalled"
+                        overloadWarned ||
+                            (measuredFps > 0f && measuredFps < config.fps * 0.8f) ->
+                            "Performance warning"
+                        else -> "Healthy"
+                    }
                     val loops: Int
                     var itemName = config.videoName
                     if (playlistMode && totalPlaylistMs > 0) {
@@ -586,6 +662,12 @@ class StreamService : Service() {
                     }
                     if (overloadStreak >= 10 && !overloadWarned) {
                         overloadWarned = true
+                        post { s ->
+                            s.copy(
+                                perfWarning = "Encoding below real time — use 480p or a " +
+                                    "lower FPS for stable streaming on this device."
+                            )
+                        }
                         LogStore.event(
                             "ENCODE OVERLOAD suspected: measured " +
                                 "${String.format(Locale.US, "%.1f", measuredFps)} fps vs target " +
@@ -641,7 +723,8 @@ class StreamService : Service() {
                                 videoName = config.videoName,
                                 playlistPosition = if (playlistMode) itemName else "",
                                 micLevelPct = MicMixer.levelPct,
-                                deviceTempC = deviceTempC
+                                deviceTempC = deviceTempC,
+                                health = healthLabel
                             )
                         }
                     } else {
@@ -690,7 +773,8 @@ class StreamService : Service() {
                                     networkOk = netOk,
                                     playlistPosition = if (playlistMode) itemName else "",
                                     micLevelPct = MicMixer.levelPct,
-                                    deviceTempC = deviceTempC
+                                    deviceTempC = deviceTempC,
+                                    health = healthLabel
                                 )
                             }
                         }
@@ -756,6 +840,24 @@ class StreamService : Service() {
                     }
                     is RunResult.Cancelled -> {
                         // A cancel here means the watchdog killed a stalled session.
+                        if (attemptUsedHw && ranSeconds < 20 && !forceSoftware) {
+                            forceSoftware = true
+                            LogStore.event(
+                                "Hardware encoder stalled early (${ranSeconds}s) — " +
+                                    "falling back to libx264 (software)."
+                            )
+                        }
+                        // Overload is not a transient fault: retrying the same
+                        // configuration would loop forever. Stop honestly and
+                        // recommend a sustainable configuration.
+                        if (overloadWarned && !attemptUsedHw) {
+                            failNow(
+                                "Encoding overload: this device cannot sustain " +
+                                    "${config.quality.label} @ ${config.fps} fps in real time. " +
+                                    "Restart with 480p or a lower FPS for a stable stream."
+                            )
+                            return
+                        }
                         attempt++
                         LogStore.event("Stream stalled — forcing reconnect ($attempt/$MAX_ATTEMPTS)")
                         if (attempt > MAX_ATTEMPTS) {
@@ -775,6 +877,13 @@ class StreamService : Service() {
                         val err = result.error
                         LogStore.event("FFmpeg failed: ${err.userMessage}")
                         post { it.copy(lastError = err.userMessage) }
+                        if (attemptUsedHw && ranSeconds < 20 && !forceSoftware) {
+                            forceSoftware = true
+                            LogStore.event(
+                                "Hardware encoder attempt failed after ${ranSeconds}s — " +
+                                    "falling back to libx264 (software). Reason: ${err.userMessage}"
+                            )
+                        }
                         if (err.kind == ErrorKind.AUTH || err.kind == ErrorKind.INPUT) {
                             failNow(err.userMessage)
                             return

@@ -99,6 +99,8 @@
     <string name="row_now_playing">Now playing</string>
     <string name="youtube_analytics_note">YouTube analytics unavailable — this app publishes video only. See YouTube Studio for viewers and stats.</string>
     <string name="row_device_temp">Device temp</string>
+    <string name="row_encoder">Encoder</string>
+    <string name="row_health">Stream health</string>
 
     <string name="start_live">🔴 START LIVE</string>
     <string name="stop_live">STOP LIVE</string>

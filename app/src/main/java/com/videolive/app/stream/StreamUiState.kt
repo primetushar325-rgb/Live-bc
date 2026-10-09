@@ -44,6 +44,9 @@ data class StreamUiState(
     // Phase 5/7/9 dashboard additions.
     val micLevelPct: Int = 0,
     val deviceTempC: Double = 0.0,
+    val encoderName: String = "",
+    val perfWarning: String = "",
+    val health: String = "",
     val playlistPosition: String = "",   // "Now playing: <item> (n of m)"
     val lastError: String = ""
 )

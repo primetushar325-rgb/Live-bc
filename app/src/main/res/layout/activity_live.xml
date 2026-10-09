@@ -357,6 +357,56 @@
         </LinearLayout>
 
         <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_encoder"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtEncoder"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_health"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:id="@+id/txtHealth"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:textColor="?attr/vlAccent"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/rowLastError"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -441,6 +491,18 @@
                 android:textStyle="bold" />
         </LinearLayout>
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/txtPerfWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_card"
+        android:padding="12dp"
+        android:textColor="@color/amber"
+        android:textSize="12.5sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
 
     <TextView
         android:id="@+id/txtAnalyticsNote"

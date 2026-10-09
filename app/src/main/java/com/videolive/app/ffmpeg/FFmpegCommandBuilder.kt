@@ -29,7 +29,8 @@ object FFmpegCommandBuilder {
         info: VideoInfo,
         ffmpegInput: String,
         destinationUrl: String,
-        micPipePath: String?
+        micPipePath: String?,
+        hardwareEncoder: Boolean = false
     ): List<String> {
         val (w, h) = config.outputSize()
         val fps = config.fps
@@ -43,7 +44,9 @@ object FFmpegCommandBuilder {
         // Input 0: the local video, looped forever, paced at real-time speed.
         args += listOf("-re", "-stream_loop", "-1", "-i", ffmpegInput)
 
-        appendInputsAndOutput(args, config, info.hasAudio, w, h, fps, bitrateK, micPipePath)
+        appendInputsAndOutput(
+            args, config, info.hasAudio, w, h, fps, bitrateK, micPipePath, hardwareEncoder
+        )
         args += destinationUrl
         return args
     }
@@ -57,7 +60,8 @@ object FFmpegCommandBuilder {
         hasAudio: Boolean,
         concatListFile: File,
         destinationUrl: String,
-        micPipePath: String?
+        micPipePath: String?,
+        hardwareEncoder: Boolean = false
     ): List<String> {
         val (w, h) = config.outputSize()
         val fps = config.fps
@@ -71,7 +75,7 @@ object FFmpegCommandBuilder {
         if (config.loopMode == LoopMode.ALL) args += listOf("-stream_loop", "-1")
         args += listOf("-f", "concat", "-safe", "0", "-i", concatListFile.absolutePath)
 
-        appendInputsAndOutput(args, config, hasAudio, w, h, fps, bitrateK, micPipePath)
+        appendInputsAndOutput(args, config, hasAudio, w, h, fps, bitrateK, micPipePath, hardwareEncoder)
         args += destinationUrl
         return args
     }
@@ -85,7 +89,8 @@ object FFmpegCommandBuilder {
         h: Int,
         fps: Int,
         bitrateK: Int,
-        micPipePath: String?
+        micPipePath: String?,
+        hardwareEncoder: Boolean
     ) {
         var nextIndex = 1
         var silenceIndex: Int? = null
@@ -110,20 +115,34 @@ object FFmpegCommandBuilder {
         args += listOf("-map", "0:v:0")
         args += listOf("-vf", videoFilter(config, w, h))
 
-        // H.264 encode tuned for low-latency live streaming (CBR).
-        args += listOf(
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-tune", "zerolatency",
-            "-pix_fmt", "yuv420p",
-            "-r", fps.toString(),
-            "-g", (fps * 2).toString(),
-            "-keyint_min", fps.toString(),
-            "-sc_threshold", "0",
-            "-b:v", "${bitrateK}k",
-            "-maxrate", "${bitrateK}k",
-            "-bufsize", "${bitrateK * 2}k"
-        )
+        if (hardwareEncoder) {
+            // Android MediaCodec H.264 — the only hardware path this build
+            // packages. Standard AVCodecContext knobs only (bitrate, GOP,
+            // rate, profile); the wrapper maps them onto the codec. Rate
+            // control stays at the configured target bitrate.
+            args += listOf(
+                "-c:v", "h264_mediacodec",
+                "-b:v", "${bitrateK}k",
+                "-r", fps.toString(),
+                "-g", (fps * 2).toString(),
+                "-profile:v", "main"
+            )
+        } else {
+            // H.264 encode tuned for low-latency live streaming (CBR).
+            args += listOf(
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-tune", "zerolatency",
+                "-pix_fmt", "yuv420p",
+                "-r", fps.toString(),
+                "-g", (fps * 2).toString(),
+                "-keyint_min", fps.toString(),
+                "-sc_threshold", "0",
+                "-b:v", "${bitrateK}k",
+                "-maxrate", "${bitrateK}k",
+                "-bufsize", "${bitrateK * 2}k"
+            )
+        }
 
         // Audio routing.
         val volume = config.videoVolumePct.coerceIn(0, 100) / 100f

@@ -14,6 +14,8 @@ object ThemeEngine {
 
     fun apply(activity: Activity) {
         activity.setTheme(ThemeStore.current(activity).resId)
+        // Accent is a forced overlay so any theme + any accent combine.
+        activity.theme.applyStyle(ThemeStore.accent(activity).overlayRes, true)
     }
 
     /** Resolves a themeable color attr for code-side coloring. */
