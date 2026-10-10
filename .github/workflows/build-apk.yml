@@ -1,0 +1,142 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Generate release signing key
+        run: |
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/release.keystore" \
+            -alias videolive \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass videolive123 -keypass videolive123 \
+            -dname "CN=Video Live, OU=Dev, O=VideoLive, L=Dhaka, C=BD"
+
+      - name: Build APK
+        env:
+          RELEASE_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          RELEASE_KEYSTORE_PASSWORD: videolive123
+          RELEASE_KEY_ALIAS: videolive
+          RELEASE_KEY_PASSWORD: videolive123
+        run: |
+          set +e
+          gradle :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
+          rc=${PIPESTATUS[0]}
+          if [ $rc -ne 0 ]; then
+            echo "### Build failure log" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 120 build.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep -E "^e: |> Task .*FAILED|FAILURE:|Caused by:|What went wrong|Could not" build.log \
+              | head -30 | sed 's/^/::error::/'
+            exit $rc
+          fi
+
+      - name: Verify smart-exception on RELEASE runtime classpath
+        run: |
+          gradle :app:dependencies --configuration releaseRuntimeClasspath > deptree.txt || true
+          grep -n "smart-exception" deptree.txt | head -10 | sed 's/^/::notice::/'
+          echo "### smart-exception in release runtime classpath" >> "$GITHUB_STEP_SUMMARY"
+          grep -n "smart-exception" deptree.txt >> "$GITHUB_STEP_SUMMARY" || true
+          missing=0
+          grep -q "smart-exception-java"    deptree.txt || { echo "::error::smart-exception-java MISSING from release runtime classpath"; missing=1; }
+          grep -q "smart-exception-common"  deptree.txt || { echo "::error::smart-exception-common MISSING from release runtime classpath"; missing=1; }
+          exit $missing
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/VideoLive.apk
+          cp app/build/outputs/apk/release/app-release.apk out/VideoLive-release.apk
+          sha256sum out/*.apk
+
+      - name: Verify FFmpeg native libraries inside APK
+        run: |
+          mkdir -p apkcheck && cd apkcheck
+          unzip -q ../out/VideoLive-release.apk 'lib/*'
+          echo "### Native libraries packaged in the APK" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          find lib -name '*.so' | sort >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Native libraries in APK:"
+          find lib -name '*.so' | sort
+          missing=0
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            if ls lib/$abi/*.so >/dev/null 2>&1; then
+              echo "::notice::ABI $abi packaged ($(ls lib/$abi/*.so | wc -l) libs)"
+            else
+              echo "::error::ABI $abi MISSING from APK"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Verify SmartException classes defined inside RELEASE APK dex
+        run: |
+          DEXDUMP=$(ls "$ANDROID_HOME"/build-tools/*/dexdump 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$DEXDUMP" ]; then echo "::error::dexdump not found"; exit 1; fi
+          mkdir -p dexcheck && cd dexcheck
+          unzip -q -o ../out/VideoLive-release.apk 'classes*.dex'
+          echo "### SmartException classes defined in release APK" >> "$GITHUB_STEP_SUMMARY"
+          fail=0
+          for cls in "com/arthenica/smartexception/java/Exceptions" \
+                     "com/arthenica/smartexception/AbstractExceptions" \
+                     "com/arthenica/smartexception/PackageLoader" \
+                     "com/arthenica/ffmpegkit/FFmpegKit"; do
+            if "$DEXDUMP" classes*.dex | grep -q "Class descriptor.*'L$cls;'"; then
+              echo "::notice::class $cls DEFINED in release APK dex"
+              echo "- ✅ \`$cls\`" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error::class $cls NOT defined in release APK dex"
+              echo "- ❌ \`$cls\` MISSING" >> "$GITHUB_STEP_SUMMARY"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoLive-apk
+          path: |
+            out/VideoLive.apk
+            out/VideoLive-release.apk
+          if-no-files-found: error
+
+      - name: Publish APKs to Releases (direct .apk downloads)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh release delete apk-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create apk-latest out/VideoLive-release.apk out/VideoLive.apk \
+            --title "Video Live APK (latest build)" \
+            --notes "Auto-published from branch ${GITHUB_REF_NAME} @ ${GITHUB_SHA}.
+
+          - **VideoLive-release.apk** — signed RELEASE build (recommended).
+          - **VideoLive.apk** — debug-signed build.
+
+          If you installed a previous build with a different signature, uninstall it first." \
+            --latest

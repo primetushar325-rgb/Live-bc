@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btnBack"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_button_secondary"
+                android:contentDescription="@string/cancel"
+                android:src="@drawable/ic_back" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/settings_title"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Background & battery -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="BACKGROUND STREAMING"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Streaming runs in a foreground service with a persistent notification, so it continues while the screen is locked or another app is open. For reliable long streams, allow unrestricted battery usage for this app."
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/txtBatteryStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textColor="@color/amber"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnBattery"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_button_secondary"
+                android:gravity="center"
+                android:text="Disable battery optimization"
+                android:textColor="?attr/vlAccent"
+                android:textSize="13.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Streaming engine -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="STREAMING ENGINE"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/txtEngineInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="The engine decodes your video, re-encodes it as H.264 + AAC and streams FLV over RTMP/RTMPS. The video loops inside a single FFmpeg session, so the RTMP connection to YouTube is never reconnected at the loop point and timestamps stay continuous."
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Security -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="STREAM KEY SECURITY"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Your stream key is stored encrypted on this device (Android Keystore). It is never logged, never shown in notifications and never sent anywhere except YouTube's RTMP server."
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- Device temperature guard (Phase 7) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="@string/settings_thermal_title"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/thermal_warn_label"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13.5sp" />
+
+                <SeekBar
+                    android:id="@+id/seekThermalWarn"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="2"
+                    android:max="15"
+                    android:progressTint="@color/amber"
+                    android:thumbTint="@color/amber" />
+
+                <TextView
+                    android:id="@+id/txtThermalWarn"
+                    android:layout_width="52dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:textColor="@color/amber"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/thermal_stop_label"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13.5sp" />
+
+                <SeekBar
+                    android:id="@+id/seekThermalCrit"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="2"
+                    android:max="15"
+                    android:progressTint="@color/red"
+                    android:thumbTint="@color/red" />
+
+                <TextView
+                    android:id="@+id/txtThermalCrit"
+                    android:layout_width="52dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:textColor="@color/red"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/thermal_hint"
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <!-- Encoding engine -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="ENCODER"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <Spinner
+                android:id="@+id/spinnerEncoder"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_input" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Auto prefers the verified hardware encoder (h264_mediacodec) and falls back to libx264 automatically if hardware fails. The Live screen shows which encoder is actually in use."
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <!-- Appearance -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="APPEARANCE"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Theme"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp" />
+
+            <Spinner
+                android:id="@+id/spinnerThemeMode"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_input" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Accent color"
+                android:textColor="?attr/vlTextPrimary"
+                android:textSize="13.5sp" />
+
+            <Spinner
+                android:id="@+id/spinnerAccent"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_input" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Theme and accent apply across the whole app, persist after restart, and never interrupt an active stream."
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <!-- Experimental (Phase 3 gate) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.12"
+                android:text="@string/settings_playlist_title"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/settings_playlist_switch"
+                    android:textColor="?attr/vlTextPrimary"
+                    android:textSize="13.5sp" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchPlaylist"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Playlist mode streams several videos in one continuous session. Turn this OFF to always stream only the single selected video."
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="11.5sp" />
+        </LinearLayout>
+
+        <!-- Logs -->
+        <TextView
+            android:id="@+id/btnOpenLogs"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_button_secondary"
+            android:gravity="center"
+            android:text="Open Advanced Logs"
+            android:textColor="?attr/vlAccent"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/txtAbout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:gravity="center"
+                android:text="LIVE VIP 3.0 — local video to YouTube Live streaming"
+            android:textColor="?attr/vlTextFaint"
+            android:textSize="11.5sp" />
+    </LinearLayout>
+</ScrollView>

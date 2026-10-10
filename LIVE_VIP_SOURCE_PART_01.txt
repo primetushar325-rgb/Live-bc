@@ -1,0 +1,3992 @@
+================================================================
+LIVE VIP — FULL SOURCE DUMP — PART 01
+Project: Live-bc (Android, package com.videolive.app)
+Commit: c871f1be5a0a682ed40480e486c10a1808ed06be  Branch: arena/623b9178-live-bc
+Generated: 2026-10-09T11:45:11Z
+================================================================
+
+========== FILE: .github/workflows/build-apk.yml ==========
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Generate release signing key
+        run: |
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/release.keystore" \
+            -alias videolive \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass [REDACTED_SECRET] -keypass [REDACTED_SECRET] \
+            -dname "CN=Video Live, OU=Dev, O=VideoLive, L=Dhaka, C=BD"
+
+      - name: Build APK
+        env:
+          RELEASE_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          RELEASE_KEYSTORE_PASSWORD: [REDACTED_SECRET]
+          RELEASE_KEY_ALIAS: videolive
+          RELEASE_KEY_PASSWORD: [REDACTED_SECRET]
+        run: |
+          set +e
+          gradle :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace --console=plain 2>&1 | tee build.log
+          rc=${PIPESTATUS[0]}
+          if [ $rc -ne 0 ]; then
+            echo "### Build failure log" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 120 build.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep -E "^e: |> Task .*FAILED|FAILURE:|Caused by:|What went wrong|Could not" build.log \
+              | head -30 | sed 's/^/::error::/'
+            exit $rc
+          fi
+
+      - name: Verify smart-exception on RELEASE runtime classpath
+        run: |
+          gradle :app:dependencies --configuration releaseRuntimeClasspath > deptree.txt || true
+          grep -n "smart-exception" deptree.txt | head -10 | sed 's/^/::notice::/'
+          echo "### smart-exception in release runtime classpath" >> "$GITHUB_STEP_SUMMARY"
+          grep -n "smart-exception" deptree.txt >> "$GITHUB_STEP_SUMMARY" || true
+          missing=0
+          grep -q "smart-exception-java"    deptree.txt || { echo "::error::smart-exception-java MISSING from release runtime classpath"; missing=1; }
+          grep -q "smart-exception-common"  deptree.txt || { echo "::error::smart-exception-common MISSING from release runtime classpath"; missing=1; }
+          exit $missing
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/VideoLive.apk
+          cp app/build/outputs/apk/release/app-release.apk out/VideoLive-release.apk
+          sha256sum out/*.apk
+
+      - name: Verify FFmpeg native libraries inside APK
+        run: |
+          mkdir -p apkcheck && cd apkcheck
+          unzip -q ../out/VideoLive-release.apk 'lib/*'
+          echo "### Native libraries packaged in the APK" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          find lib -name '*.so' | sort >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Native libraries in APK:"
+          find lib -name '*.so' | sort
+          missing=0
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            if ls lib/$abi/*.so >/dev/null 2>&1; then
+              echo "::notice::ABI $abi packaged ($(ls lib/$abi/*.so | wc -l) libs)"
+            else
+              echo "::error::ABI $abi MISSING from APK"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Verify SmartException classes defined inside RELEASE APK dex
+        run: |
+          DEXDUMP=$(ls "$ANDROID_HOME"/build-tools/*/dexdump 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$DEXDUMP" ]; then echo "::error::dexdump not found"; exit 1; fi
+          mkdir -p dexcheck && cd dexcheck
+          unzip -q -o ../out/VideoLive-release.apk 'classes*.dex'
+          echo "### SmartException classes defined in release APK" >> "$GITHUB_STEP_SUMMARY"
+          fail=0
+          for cls in "com/arthenica/smartexception/java/Exceptions" \
+                     "com/arthenica/smartexception/AbstractExceptions" \
+                     "com/arthenica/smartexception/PackageLoader" \
+                     "com/arthenica/ffmpegkit/FFmpegKit"; do
+            if "$DEXDUMP" classes*.dex | grep -q "Class descriptor.*'L$cls;'"; then
+              echo "::notice::class $cls DEFINED in release APK dex"
+              echo "- ✅ \`$cls\`" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error::class $cls NOT defined in release APK dex"
+              echo "- ❌ \`$cls\` MISSING" >> "$GITHUB_STEP_SUMMARY"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoLive-apk
+          path: |
+            out/VideoLive.apk
+            out/VideoLive-release.apk
+          if-no-files-found: error
+
+      - name: Publish APKs to Releases (direct .apk downloads)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh release delete apk-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create apk-latest out/VideoLive-release.apk out/VideoLive.apk \
+            --title "Video Live APK (latest build)" \
+            --notes "Auto-published from branch ${GITHUB_REF_NAME} @ ${GITHUB_SHA}.
+
+          - **VideoLive-release.apk** — signed RELEASE build (recommended).
+          - **VideoLive.apk** — debug-signed build.
+
+          If you installed a previous build with a different signature, uninstall it first." \
+            --latest
+
+========== END FILE ==========
+
+========== FILE: .gitignore ==========
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.keystore
+release/
+app/libs/
+
+========== END FILE ==========
+
+========== FILE: README.md ==========
+# Video Live — Local Video → YouTube Live (RTMP/RTMPS)
+
+A production-oriented Android app that picks a local video, loops it forever through a
+**single in-process FFmpeg session** (H.264 + AAC → FLV), and streams it to YouTube Live
+over RTMP/RTMPS. The RTMP connection is opened **once** and is never reconnected at the
+loop boundary — looping happens inside FFmpeg with `-stream_loop -1 -re`, so output
+timestamps stay monotonic and YouTube sees one continuous broadcast.
+
+## Pipeline
+
+```
+LOCAL VIDEO (SAF uri, zero-copy)
+        │
+        ▼
+FFmpeg (ffmpeg-kit, in-process)
+  -re -stream_loop -1 -i <video>
+        │
+  video decoder → libx264 (H.264, CBR, zerolatency)
+  audio decoder → AAC 44.1 kHz stereo (or generated silence / mic mix)
+        │
+        ▼
+FLV muxer → RTMP/RTMPS → YouTube Live
+```
+
+## Feature map
+
+| Requirement | Implementation |
+|---|---|
+| Video selection | Storage Access Framework (`ACTION_OPEN_DOCUMENT`) + persistable Uri permission. No file copy: FFmpeg reads through ffmpeg-kit's SAF protocol; a cache copy is used only if the SAF descriptor is unreadable. |
+| Continuous loop | `-stream_loop -1` inside one FFmpeg session. No stop/restart/reconnect at loop end. |
+| Stable timestamps / A-V sync | Single session, single output clock; `-re` pacing; CFR output via `-r`. |
+| Server URL + Stream Key | Separate fields combined internally, or advanced full-URL mode. Key stored in `EncryptedSharedPreferences` (Android Keystore), never logged, never in notifications — every log line passes a sanitizer. |
+| Format 9:16 / 16:9 | Output resolution really changes (e.g. 1080x1920 vs 1920x1080) with scale+pad filters. |
+| Quality / FPS / Bitrate | 360p–1080p, 24–60 fps, auto or manual CBR bitrate. 4K is intentionally not offered (honest software-encode limits). Device-adaptive FPS cap on weak CPUs. |
+| Audio | Video volume 0–100%. Mic OFF keeps video audio. Mic ON mixes mic + video audio via FFmpeg `amix`, mic fed through an FFmpegKit named pipe (FIFO) written by `AudioRecord`. Mic mute writes silence so the pipeline never stalls. |
+| Loop modes | Loop One (continuous single video). Loop All is presented but clearly marked as upcoming. |
+| Preview | Native `VideoView` + thumbnail via `MediaMetadataRetriever`; metadata via real FFprobe. |
+| Background streaming | Foreground service + persistent notification (chronometer, Open/Stop actions), partial WakeLock, battery-optimization guidance and exemption request. |
+| Reconnect logic | Only on real network/RTMP failure or a 30 s watchdog stall. Exponential backoff 2s→30s, max 5 attempts, live status ("Reconnecting 2/5…"), budget reset after 60 s of healthy streaming. Auth/input errors fail fast with clear messages. |
+| Error handling | FFmpeg stderr is classified into human messages ("Check your YouTube Stream Key.", "Internet connection lost…"). Advanced Logs screen shows sanitized logs. |
+
+## Project structure
+
+```
+app/src/main/java/com/videolive/app/
+├── MainActivity.kt            # UI: pick video, destination, format, quality, audio, loop, START LIVE
+├── LiveActivity.kt            # LIVE screen: elapsed time, stats, mute mic, stop
+├── SettingsActivity.kt        # Battery/help, engine info, security info
+├── LogsActivity.kt            # Advanced (sanitized) logs
+├── App.kt
+├── model/StreamConfig.kt      # Config, quality presets, VideoInfo
+├── data/SecurePrefs.kt        # Keystore-encrypted stream key
+├── data/SettingsRepository.kt # UI settings persistence
+├── data/VideoRepository.kt    # Shared loaded-video holder
+├── media/InputSource.kt       # SAF zero-copy vs cache-copy source
+├── media/MediaProbe.kt        # FFprobe metadata
+├── media/VideoLoader.kt       # Resolve Uri → FFmpeg input + probe
+├── ffmpeg/FFmpegCommandBuilder.kt  # Dynamic command generation
+├── ffmpeg/FFmpegManager.kt    # Async session execution (suspend)
+├── ffmpeg/ErrorClassifier.kt  # stderr → human readable errors
+├── ffmpeg/LogStore.kt         # Sanitized ring buffer
+├── stream/StreamService.kt    # Foreground service, reconnect loop, watchdog
+├── stream/MicMixer.kt         # AudioRecord → FIFO → amix
+├── stream/StreamUiState.kt
+└── util/                      # Sanitizer, network, device caps, formatting
+```
+
+The streaming engine lives entirely in `StreamService` + `ffmpeg/*` — it is not coupled
+to any Activity, so the stream survives Activity destruction and backgrounding.
+
+**FFmpeg dependency:** FFmpegKit `full-gpl` 6.0-2 (GPL variant — bundles `libx264`
+for H.264 plus TLS for RTMPS). The official `com.arthenica` artifacts were removed from
+Maven Central in April 2025, so Gradle fetches a pinned community rebuild of that exact
+package from a GitHub release and **verifies it by SHA-256 before building**
+(`app/build.gradle.kts` → `downloadFfmpegKitAar`). This build ships **all 4 ABIs
+(armeabi-v7a, arm64-v8a, x86, x86_64)** — the universal APK installs on both 32-bit and
+64-bit phones. Requires Android 7.0 (API 24) or newer.
+
+## Build
+
+Requires JDK 17 and Android SDK 35 (the CI workflow sets these up automatically).
+
+```bash
+./gradlew :app:assembleDebug :app:assembleRelease
+# Debug APK:   app/build/outputs/apk/debug/app-debug.apk
+# Release APK: app/build/outputs/apk/release/app-release.apk (signed when
+#              RELEASE_KEYSTORE_FILE etc. env vars are provided, as in CI)
+```
+
+The **Build APK** GitHub Actions workflow (`.github/workflows/build-apk.yml`) runs on every
+push, builds **both** debug and signed release APKs, verifies that the FFmpeg native
+libraries are actually packaged for all 4 ABIs (arm64-v8a, armeabi-v7a, x86, x86_64),
+and publishes both APKs to the repository's **Releases** page (`apk-latest` tag).
+
+## FFmpeg runtime verification
+
+The app never assumes FFmpeg exists just because the library is bundled. `FFmpegRuntime`
+detects the device ABI, inventories the native `.so` files packaged inside the installed
+APK, loads the engine, and runs a real `ffmpeg -version` execution test — all logged to
+the sanitized Advanced Logs screen. Architecture mismatches report
+"FFmpeg is not available for this device architecture."; runtime failures report
+"Streaming engine initialization failed." with the real reason in the logs.
+
+## Testing checklist
+
+1. Select MP4 → Start Live → YouTube receives the stream.
+2. Video reaches the end → loops automatically (single FFmpeg session, watch log: no new session at the loop point).
+3. Loop happens without RTMP reconnect (log shows continuous `time=` growth).
+4. Mic OFF → video audio continues normally.
+5. Mic ON → mic is mixed with the video audio (FFmpeg `amix`).
+6. Screen locked → stream continues (foreground service + WakeLock).
+7. App backgrounded → stream continues.
+8. Airplane-mode toggle → "Network problem…" then "Reconnecting n/5…" and recovery.
+9. Stop Live → confirmation → FFmpeg, mixer, WakeLock and service shut down cleanly.
+10. Long-run a 30–60 min session; watch FPS/bitrate/speed on the LIVE screen and Advanced Logs.
+
+## Security notes
+
+- Stream keys are stored encrypted on-device and are only ever sent to the RTMP server.
+- Every log line is masked (`rtmp(s)://host/<hidden-key>`), including FFmpeg's own stderr.
+- No analytics, no crash upload, no network calls except the RTMP stream itself.
+
+========== END FILE ==========
+
+========== FILE: app/build.gradle.kts ==========
+import java.net.URI
+import java.security.MessageDigest
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+// ---------------------------------------------------------------------------
+// FFmpegKit AAR (community rebuild of the official full-gpl 6.0-2 package,
+// verified: com.arthenica.ffmpegkit classes, all 4 ABIs incl. armeabi-v7a).
+// The original artifacts were removed from Maven Central in April 2025, so the
+// AAR is fetched from a pinned GitHub release and verified by SHA-256.
+// ---------------------------------------------------------------------------
+val ffmpegKitAarUrl =
+    "https://github.com/NooruddinLakhani/ffmpeg-kit-full-gpl/releases/download/v1.0.0/ffmpeg-kit-full-gpl.aar"
+val ffmpegKitAarSha256 =
+    "87e37384ef5f8755d816212890775ba94d493a70d2eff4615a8d59780ac1fc5e"
+val ffmpegKitAar = layout.projectDirectory.file("libs/ffmpeg-kit-full-gpl.aar").asFile
+
+val downloadFfmpegKitAar = tasks.register("downloadFfmpegKitAar") {
+    outputs.file(ffmpegKitAar)
+    onlyIf { !ffmpegKitAar.exists() }
+    doLast {
+        ffmpegKitAar.parentFile.mkdirs()
+        logger.lifecycle("Downloading FFmpegKit AAR (56 MB)...")
+        URI(ffmpegKitAarUrl).toURL().openStream().use { input ->
+            ffmpegKitAar.outputStream().use { output -> input.copyTo(output) }
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        val sha = ffmpegKitAar.inputStream().use { stream ->
+            digest.digest(stream.readBytes()).joinToString("") { "%02x".format(it) }
+        }
+        if (sha != ffmpegKitAarSha256) {
+            ffmpegKitAar.delete()
+            throw GradleException(
+                "SHA-256 mismatch for ffmpeg-kit-full-gpl.aar (got $sha). " +
+                    "Refusing to build with an unverified binary."
+            )
+        }
+        logger.lifecycle("FFmpegKit AAR verified: $sha")
+    }
+}
+
+android {
+    namespace = "com.videolive.app"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.videolive.app"
+        minSdk = 24
+        // Kept at 34 on purpose: Android 15 (target 35) imposes a 6-hour limit on
+        // dataSync foreground services, which would kill long live streams.
+        targetSdk = 34
+        versionCode = 15
+        versionName = "3.0"
+        // No abiFilters on purpose: the FFmpegKit AAR ships armeabi-v7a,
+        // arm64-v8a, x86 and x86_64, so one universal APK runs on every device.
+    }
+
+    signingConfigs {
+        // Release signing material is provided by CI via environment variables.
+        if (System.getenv("RELEASE_KEYSTORE_FILE") != null) {
+            create("release") {
+                storeFile = file(System.getenv("RELEASE_KEYSTORE_FILE"))
+                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: ""
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: ""
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            isMinifyEnabled = false
+        }
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = if (signingConfigs.findByName("release") != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    packaging {
+        resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
+        // Extract native libraries at install time (extractNativeLibs=true).
+        // Maximum compatibility with older ROMs that cannot load unpacked .so
+        // files straight from the APK.
+        jniLibs.useLegacyPackaging = true
+    }
+}
+
+afterEvaluate {
+    tasks.matching { it.name == "preBuild" }.configureEach {
+        dependsOn(downloadFfmpegKitAar)
+    }
+}
+
+dependencies {
+    // Local, SHA-256-pinned FFmpegKit AAR (all ABIs).
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // Encrypted local storage for the stream key (Android Keystore backed).
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // FFmpegKit's exception helper. The engine is bundled as a LOCAL AAR, so its
+    // transitive Maven dependencies are NOT pulled in automatically — FFmpegKit
+    // references com.arthenica.smartexception.java.Exceptions at runtime and dies
+    // with NoClassDefFoundError without these two artifacts.
+    implementation("com.arthenica:smart-exception-java:0.2.1")
+    implementation("com.arthenica:smart-exception-common:0.2.1")
+}
+
+========== END FILE ==========
+
+========== FILE: app/proguard-rules.pro ==========
+# FFmpegKit ships its own consumer rules; keep its classes intact if minify is ever enabled.
+-keep class com.arthenica.ffmpegkit.** { *; }
+-dontwarn com.arthenica.ffmpegkit.**
+
+# FFmpegKit references smart-exception at runtime (NoClassDefFoundError if removed).
+-keep class com.arthenica.smartexception.** { *; }
+-dontwarn com.arthenica.smartexception.**
+
+# Keep serializable stream configuration.
+-keep class com.videolive.app.model.** { *; }
+
+========== END FILE ==========
+
+========== FILE: app/src/main/AndroidManifest.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <application
+        android:name=".App"
+        android:allowBackup="true"
+        android:icon="@drawable/logo_live_vip"
+        android:roundIcon="@drawable/logo_live_vip"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.VideoLive">
+
+        <activity
+            android:name=".SplashActivity"
+            android:exported="true"
+            android:theme="@style/Theme.AppCompat.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ProjectsActivity"
+            android:exported="false"
+            android:launchMode="singleTop" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustPan" />
+
+        <activity
+            android:name=".LiveActivity"
+            android:exported="false"
+            android:launchMode="singleTop" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".LogsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".PlaylistActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".DestinationsActivity"
+            android:exported="false" />
+
+        <!-- Streaming engine. Lives independently from any Activity so the stream
+             survives UI destruction, backgrounding and screen locks. -->
+        <service
+            android:name=".stream.StreamService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+
+</manifest>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/App.kt ==========
+package com.videolive.app
+
+import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
+import com.videolive.app.stream.StreamService
+
+class App : Application() {
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            if (nm.getNotificationChannel(StreamService.CHANNEL_ID) == null) {
+                val channel = NotificationChannel(
+                    StreamService.CHANNEL_ID,
+                    "Live streaming",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+                channel.description = "Keeps the live stream running in the background"
+                channel.setShowBadge(false)
+                nm.createNotificationChannel(channel)
+            }
+        }
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/DestinationsActivity.kt ==========
+package com.videolive.app
+
+import android.os.Bundle
+import android.text.InputType
+import android.view.Gravity
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
+import androidx.appcompat.widget.SwitchCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.videolive.app.data.DestinationsRepository
+import com.videolive.app.data.SecurePrefs
+import com.videolive.app.data.SettingsRepository
+import com.videolive.app.ffmpeg.FFmpegCommandBuilder
+import com.videolive.app.ffmpeg.LogStore
+import com.videolive.app.net.RtmpProbe
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Phase 8 — destination manager.
+ *
+ * Up to 3 saved RTMP/RTMPS destinations. Stream keys live ONLY in
+ * [SecurePrefs] (EncryptedSharedPreferences) and are never written to logs
+ * or displayed once saved. On-device simulcast (publishing to several
+ * servers at once) is intentionally NOT done: one encoder session keeps the
+ * proven engine intact; the ACTIVE destination is the one used to stream.
+ */
+class DestinationsActivity : AppCompatActivity() {
+
+    private class Row(
+        val id: String,
+        val etName: EditText,
+        val etServer: EditText,
+        val etKey: EditText,
+        val txtStatus: TextView,
+        val swEnabled: SwitchCompat,
+        val btnActive: TextView
+    ) {
+        var keyVisible = false
+        var hasSavedKey = false
+    }
+
+    private val rows = mutableListOf<Row>()
+    private lateinit var settingsRepo: SettingsRepository
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
+        setContentView(R.layout.activity_destinations)
+        settingsRepo = SettingsRepository(this)
+
+        findViewById<ImageButton>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.btnSaveDestinations).setOnClickListener { saveAll() }
+
+        val saved = DestinationsRepository.load(this)
+        val activeId = DestinationsRepository.activeId(this)
+        val container = findViewById<LinearLayout>(R.id.listDestinations)
+
+        // Always show up to MAX slots (existing + empty ones).
+        val slots = saved.toMutableList()
+        while (slots.size < DestinationsRepository.MAX) {
+            slots += DestinationsRepository.Destination(
+                id = "dest_" + UUID.randomUUID().toString().take(8),
+                name = "",
+                serverUrl = "",
+                fullUrlMode = false,
+                fullUrl = "",
+                enabled = false
+            )
+        }
+
+        slots.forEach { d ->
+            container.addView(buildRow(d, d.id == activeId))
+        }
+    }
+
+    private fun buildRow(
+        d: DestinationsRepository.Destination,
+        isActive: Boolean
+    ): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.bg_card)
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+        }
+
+        // Title row: slot label + enable switch.
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val label = TextView(this).apply {
+            text = "DESTINATION ${rows.size + 1}"
+            textSize = 12f
+            setTextColor(ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextSecondary))
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.12f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val swEnabled = SwitchCompat(this)
+        swEnabled.isChecked = d.enabled || d.name.isNotBlank() || d.serverUrl.isNotBlank()
+        titleRow.addView(label)
+        titleRow.addView(swEnabled)
+        card.addView(titleRow)
+
+        val etName = editText(getString(R.string.destination_name), d.name)
+        val etServer = editText(getString(R.string.destination_server), d.serverUrl)
+        etServer.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+
+        // Key row: password field + eye.
+        val keyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val etKey = editText(getString(R.string.destination_key), "").apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val hasSavedKey = DestinationsRepository.keyFor(this, d.id).isNotEmpty()
+        if (hasSavedKey) etKey.hint = "Key saved • type to replace"
+        val btnEye = ImageButton(this).apply {
+            setBackgroundResource(R.drawable.bg_button_secondary)
+            setImageResource(R.drawable.ic_eye)
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        keyRow.addView(etKey)
+        keyRow.addView(btnEye)
+
+        val txtStatus = TextView(this).apply {
+            textSize = 12f
+            setTextColor(ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextFaint))
+        }
+
+        // Action row: TEST / SET ACTIVE.
+        val actionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val btnTest = TextView(this).apply {
+            text = getString(R.string.destination_test)
+            textSize = 12.5f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextPrimary))
+            setBackgroundResource(R.drawable.bg_button_secondary)
+            setPadding(dp(18), dp(10), dp(18), dp(10))
+        }
+        val btnActive = TextView(this).apply {
+            text = if (isActive) "● ACTIVE" else getString(R.string.destination_active)
+            textSize = 12.5f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(
+                if (isActive) ContextCompat.getColor(this@DestinationsActivity, R.color.green)
+                else ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextSecondary)
+            )
+            setBackgroundResource(
+                if (isActive) R.drawable.bg_chip_selector else R.drawable.bg_button_secondary
+            )
+            isSelected = isActive
+            setPadding(dp(18), dp(10), dp(18), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginStart = dp(8) }
+        }
+        actionRow.addView(btnTest)
+        actionRow.addView(btnActive)
+
+        card.addView(etName)
+        card.addView(etServer)
+        card.addView(keyRow)
+        card.addView(txtStatus)
+        card.addView(actionRow)
+
+        val row = Row(
+            id = d.id,
+            etName = etName,
+            etServer = etServer,
+            etKey = etKey,
+            txtStatus = txtStatus,
+            swEnabled = swEnabled,
+            btnActive = btnActive
+        )
+        row.hasSavedKey = hasSavedKey
+
+        btnEye.setOnClickListener {
+            row.keyVisible = !row.keyVisible
+            etKey.inputType = if (row.keyVisible) {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            } else {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            }
+            etKey.setSelection(etKey.text.length)
+            btnEye.setImageResource(if (row.keyVisible) R.drawable.ic_eye_off else R.drawable.ic_eye)
+        }
+
+        btnTest.setOnClickListener { testDestination(row) }
+        btnActive.setOnClickListener { setActive(row) }
+
+        rows += row
+        return card
+    }
+
+    private fun editText(hint: String, value: String): EditText {
+        return EditText(this).apply {
+            this.hint = hint
+            setText(value)
+            textSize = 13.5f
+            setTextColor(ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextPrimary))
+            setHintTextColor(ThemeEngine.color(this@DestinationsActivity, R.attr.vlTextFaint))
+            setBackgroundResource(R.drawable.bg_input)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            maxLines = 1
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(10)
+                bottomMargin = dp(4)
+            }
+        }
+    }
+
+    /** TEST runs the real staged reachability probe (DNS/TCP/TLS/handshake). */
+    private fun testDestination(row: Row) {
+        val server = row.etServer.text.toString().trim()
+        if (!FFmpegCommandBuilder.isValidRtmpUrl(server)) {
+            row.txtStatus.text = "Enter a valid rtmp:// or rtmps:// server URL first."
+            return
+        }
+        row.txtStatus.text = "Testing server..."
+        row.txtStatus.setTextColor(ThemeEngine.color(this, R.attr.vlTextSecondary))
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { RtmpProbe.probe(server) }
+            row.txtStatus.text = if (result.success) {
+                "Server reachable ✓ (RTMP handshake OK)"
+            } else {
+                "Failed at: ${result.failedAt}"
+            }
+            row.txtStatus.setTextColor(
+                ContextCompat.getColor(
+                    this@DestinationsActivity,
+                    if (result.success) R.color.green else R.color.red
+                )
+            )
+        }
+    }
+
+    /** SET ACTIVE: save everything, then point the main streaming config here. */
+    private fun setActive(row: Row) {
+        if (!saveAll(silent = true)) return
+        val server = row.etServer.text.toString().trim()
+        if (!FFmpegCommandBuilder.isValidRtmpUrl(server)) {
+            toast("This destination has no valid server URL.")
+            return
+        }
+        val key = row.etKey.text.toString().trim()
+        if (key.isEmpty() && !row.hasSavedKey) {
+            toast("This destination has no stream key yet.")
+            return
+        }
+
+        DestinationsRepository.setActive(this, row.id)
+        // Sync into the main settings so the existing (proven) engine path
+        // streams to this destination without any engine changes.
+        settingsRepo.fullUrlMode = false
+        settingsRepo.serverUrl = server
+        if (key.isNotEmpty()) {
+            SecurePrefs.saveStreamKey(this, key)
+        } else {
+            SecurePrefs.saveStreamKey(this, DestinationsRepository.keyFor(this, row.id))
+        }
+        LogStore.event("Active destination: ${row.etName.text.ifBlank { row.id }}")
+
+        rows.forEach { r ->
+            val active = r.id == row.id
+            r.btnActive.text = if (active) "● ACTIVE" else getString(R.string.destination_active)
+            r.btnActive.isSelected = active
+            r.btnActive.setTextColor(
+                if (active) ContextCompat.getColor(this, R.color.green)
+                else ThemeEngine.color(this, R.attr.vlTextSecondary)
+            )
+        }
+        toast("Active destination set — streaming will use it.")
+    }
+
+    /** Persists names/URLs/enabled flags and any freshly typed keys. */
+    private fun saveAll(silent: Boolean = false): Boolean {
+        val list = rows.mapIndexed { index, r ->
+            DestinationsRepository.Destination(
+                id = r.id,
+                name = r.etName.text.toString().trim().ifEmpty { "Destination ${index + 1}" },
+                serverUrl = r.etServer.text.toString().trim(),
+                fullUrlMode = false,
+                fullUrl = "",
+                enabled = r.swEnabled.isChecked
+            )
+        }.filter { it.name.isNotBlank() || it.serverUrl.isNotBlank() }
+        DestinationsRepository.save(this, list)
+
+        // Keys are stored encrypted, never in the plain prefs above.
+        rows.forEach { r ->
+            val key = r.etKey.text.toString().trim()
+            if (key.isNotEmpty()) {
+                DestinationsRepository.saveKey(this, r.id, key)
+                r.etKey.setText("")
+                r.etKey.hint = "Key saved • type to replace"
+                r.hasSavedKey = true
+                r.keyVisible = false
+            }
+        }
+        if (!silent) toast("Destinations saved")
+        return true
+    }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    private fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/LiveActivity.kt ==========
+package com.videolive.app
+
+import android.content.Intent
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import android.widget.ImageButton
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.videolive.app.stream.MicMixer
+import com.videolive.app.stream.Phase
+import com.videolive.app.stream.StreamService
+import com.videolive.app.stream.StreamUiState
+import com.videolive.app.util.Texts
+import kotlinx.coroutines.launch
+
+class LiveActivity : AppCompatActivity() {
+
+    private lateinit var txtElapsed: TextView
+    private lateinit var txtStatus: TextView
+    private lateinit var txtVideoName: TextView
+    private lateinit var txtResolution: TextView
+    private lateinit var txtFps: TextView
+    private lateinit var txtBitrate: TextView
+    private lateinit var txtConnection: TextView
+    private lateinit var txtAudio: TextView
+    private lateinit var btnMuteMic: TextView
+    private lateinit var txtYouTubeHint: TextView
+    private lateinit var txtLoop: TextView
+    private lateinit var txtNetwork: TextView
+    private lateinit var btnRetryNow: TextView
+    private lateinit var rowNowPlaying: View
+    private lateinit var txtNowPlaying: TextView
+    private lateinit var txtReconnects: TextView
+    private lateinit var txtDeviceTemp: TextView
+    private lateinit var rowLastError: View
+    private lateinit var txtLastError: TextView
+    private lateinit var rowMicLevel: View
+    private lateinit var txtMicLevel: TextView
+    private lateinit var txtEncoder: TextView
+    private lateinit var txtHealth: TextView
+    private lateinit var txtPerfWarning: TextView
+
+    private var errorHandled = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
+        setContentView(R.layout.activity_live)
+
+        txtElapsed = findViewById(R.id.txtElapsed)
+        txtStatus = findViewById(R.id.txtStatus)
+        txtVideoName = findViewById(R.id.txtVideoName)
+        txtResolution = findViewById(R.id.txtResolution)
+        txtFps = findViewById(R.id.txtFps)
+        txtBitrate = findViewById(R.id.txtBitrate)
+        txtConnection = findViewById(R.id.txtConnection)
+        txtAudio = findViewById(R.id.txtAudio)
+        btnMuteMic = findViewById(R.id.btnMuteMic)
+        txtYouTubeHint = findViewById(R.id.txtYouTubeHint)
+        txtLoop = findViewById(R.id.txtLoop)
+        txtNetwork = findViewById(R.id.txtNetwork)
+        btnRetryNow = findViewById(R.id.btnRetryNow)
+        btnRetryNow.setOnClickListener { StreamService.requestRetryNow() }
+        rowNowPlaying = findViewById(R.id.rowNowPlaying)
+        txtNowPlaying = findViewById(R.id.txtNowPlaying)
+        txtReconnects = findViewById(R.id.txtReconnects)
+        txtDeviceTemp = findViewById(R.id.txtDeviceTemp)
+        rowLastError = findViewById(R.id.rowLastError)
+        txtLastError = findViewById(R.id.txtLastError)
+        rowMicLevel = findViewById(R.id.rowMicLevel)
+        txtMicLevel = findViewById(R.id.txtMicLevel)
+        txtEncoder = findViewById(R.id.txtEncoder)
+        txtHealth = findViewById(R.id.txtHealth)
+        txtPerfWarning = findViewById(R.id.txtPerfWarning)
+
+        findViewById<TextView>(R.id.btnStopLive).setOnClickListener { confirmStop() }
+        findViewById<ImageButton>(R.id.btnLiveSettings).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        btnMuteMic.setOnClickListener {
+            val newMuted = !MicMixer.muted
+            MicMixer.muted = newMuted
+            StreamService.uiState.value = StreamService.uiState.value.copy(micMuted = newMuted)
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                StreamService.uiState.collect { render(it) }
+            }
+        }
+    }
+
+    private fun render(state: StreamUiState) {
+        txtElapsed.text = Texts.formatClock(state.elapsedMs)
+        txtStatus.text = state.statusText
+        txtStatus.setTextColor(
+            if (state.phase == Phase.ERROR) ContextCompat.getColor(this, R.color.red)
+            else ThemeEngine.color(this, R.attr.vlAccent)
+        )
+
+        txtVideoName.text = state.videoName.ifEmpty { "—" }
+        txtResolution.text =
+            if (state.outWidth > 0) "${state.outWidth}x${state.outHeight}" else "—"
+        txtFps.text =
+            if (state.fps > 0) "${state.fps}" +
+                (if (state.liveFps > 0f) String.format(" (%.1f live)", state.liveFps) else "")
+            else "—"
+        txtBitrate.text = when {
+            state.liveBitrateKbps > 0 ->
+                "${state.liveBitrateKbps} kbps (target ${state.configuredBitrateKbps})"
+            state.configuredBitrateKbps > 0 -> "${state.configuredBitrateKbps} kbps"
+            else -> "—"
+        }
+
+        when (state.phase) {
+            Phase.STREAMING -> {
+                txtConnection.text = "Sending video ✓"
+                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.green))
+            }
+            Phase.PUBLISHING -> {
+                txtConnection.text = "RTMP Connected ✓"
+                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.green))
+            }
+            Phase.ENCODING -> {
+                txtConnection.text = "Encoder started…"
+                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.amber))
+            }
+            Phase.CONNECTING -> {
+                txtConnection.text = "Connecting…"
+                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.amber))
+            }
+            Phase.PREPARING -> {
+                txtConnection.text = "Preparing…"
+                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.amber))
+            }
+            Phase.RECONNECTING -> {
+                txtConnection.text = "Reconnecting ${state.attempt}/5…"
+                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.amber))
+            }
+            Phase.ERROR -> {
+                txtConnection.text = "Failed"
+                txtConnection.setTextColor(ContextCompat.getColor(this, R.color.red))
+            }
+            else -> {
+                txtConnection.text = "—"
+                txtConnection.setTextColor(ThemeEngine.color(this, R.attr.vlTextSecondary))
+            }
+        }
+
+        // Show the YouTube confirmation guidance once the encoder is actually
+        // sending video — the app cannot see YouTube's broadcast state itself.
+        txtYouTubeHint.visibility =
+            if (state.phase == Phase.PUBLISHING || state.phase == Phase.STREAMING) View.VISIBLE
+            else View.GONE
+
+        btnRetryNow.visibility =
+            if (state.phase == Phase.RECONNECTING) View.VISIBLE else View.GONE
+
+        txtLoop.text = if (state.playlistPosition.isNotEmpty()) {
+            "Loop ${state.loopCount + 1} (playlist)"
+        } else {
+            "Loop ${state.loopCount + 1} • item 1/1 (${state.videoName})"
+        }
+
+        // Phase 3: show which playlist item is on air.
+        if (state.playlistPosition.isNotEmpty()) {
+            rowNowPlaying.visibility = View.VISIBLE
+            txtNowPlaying.text = state.playlistPosition
+        } else {
+            rowNowPlaying.visibility = View.GONE
+        }
+
+        // Phase 9: real reconnect counter + last error (if any).
+        txtReconnects.text = if (state.attempt > 0) "${state.attempt}/5" else "0"
+        if (state.lastError.isNotEmpty()) {
+            rowLastError.visibility = View.VISIBLE
+            txtLastError.text = state.lastError
+        } else {
+            rowLastError.visibility = View.GONE
+        }
+
+        // Phase 7: real battery-sensor temperature (0 = not read yet).
+        txtDeviceTemp.text = if (state.deviceTempC > 0.0) {
+            String.format(java.util.Locale.US, "%.1f°C", state.deviceTempC)
+        } else "—"
+
+        // Stage 1: verified encoder + honest health state.
+        txtEncoder.text = state.encoderName.ifEmpty { "—" }
+        val healthShown = when (state.phase) {
+            Phase.RECONNECTING -> "Recovering"
+            Phase.ERROR -> "Failed"
+            Phase.STOPPING -> "Stopping"
+            Phase.STOPPED -> "Stopped"
+            else -> state.health.ifEmpty { "—" }
+        }
+        txtHealth.text = healthShown
+        txtHealth.setTextColor(
+            ContextCompat.getColor(
+                this,
+                when (healthShown) {
+                    "Healthy" -> R.color.green
+                    "Failed", "Transport stalled" -> R.color.red
+                    else -> R.color.amber
+                }
+            )
+        )
+        if (state.perfWarning.isNotEmpty()) {
+            txtPerfWarning.visibility = View.VISIBLE
+            txtPerfWarning.text = "⚠ " + state.perfWarning
+        } else {
+            txtPerfWarning.visibility = View.GONE
+        }
+
+        // Phase 5: live microphone input level.
+        if (state.micActive) {
+            rowMicLevel.visibility = View.VISIBLE
+            val bar = "▮".repeat(state.micLevelPct / 10) +
+                "▯".repeat((10 - state.micLevelPct / 10).coerceAtLeast(0))
+            txtMicLevel.text = "$bar ${state.micLevelPct}%"
+        } else {
+            rowMicLevel.visibility = View.GONE
+        }
+
+        txtNetwork.text = if (state.networkOk) "OK" else "Poor / offline"
+        txtNetwork.setTextColor(
+            ContextCompat.getColor(this, if (state.networkOk) R.color.green else R.color.amber)
+        )
+
+        val videoAudio = if (state.hasVideoAudio) "Video ON ${state.volumePct}%" else "Video silent"
+        val micPart = when {
+            !state.micActive -> "Mic OFF"
+            state.micMuted -> "Mic MUTED"
+            else -> "Mic ON"
+        }
+        txtAudio.text = "$videoAudio • $micPart"
+
+        btnMuteMic.visibility = if (state.micActive) View.VISIBLE else View.GONE
+        btnMuteMic.setText(if (state.micMuted) R.string.unmute_mic else R.string.mute_mic)
+
+        if (state.phase != Phase.ERROR) {
+            errorHandled = false
+        }
+
+        when (state.phase) {
+            Phase.ERROR -> {
+                if (!errorHandled) {
+                    errorHandled = true
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Streaming failed")
+                        .setMessage(
+                            (state.errorText ?: "Unknown error.") +
+                                "\n\nOpen Advanced Logs (Settings) for the exact stage and reason."
+                        )
+                        .setPositiveButton("Retry") { _, _ ->
+                            StreamService.retry(this)
+                        }
+                        .setNegativeButton("Close") { _, _ -> finish() }
+                        .setCancelable(false)
+                        .show()
+                }
+            }
+            Phase.STOPPED -> {
+                if (!errorHandled) {
+                    errorHandled = true
+                    mainHandler.postDelayed({ finish() }, 800)
+                }
+            }
+            else -> {
+                // Nothing to do — keep showing live status.
+            }
+        }
+
+        if (!StreamService.isStreaming && state.phase == Phase.IDLE && !errorHandled) {
+            finish()
+        }
+    }
+
+    private fun confirmStop() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.stop_confirm_title)
+            .setMessage(R.string.stop_confirm_message)
+            .setPositiveButton(R.string.stop) { _, _ ->
+                StreamService.stop(this)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/LogsActivity.kt ==========
+package com.videolive.app
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.widget.ImageButton
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
+import com.videolive.app.ffmpeg.LogStore
+
+class LogsActivity : AppCompatActivity() {
+
+    private lateinit var txtLogs: TextView
+    private lateinit var scroll: ScrollView
+    private val handler = Handler(Looper.getMainLooper())
+    private var lastSnapshot = ""
+
+    private val refresh = object : Runnable {
+        override fun run() {
+            if (!isFinishing) {
+                update()
+                handler.postDelayed(this, 1000)
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
+        setContentView(R.layout.activity_logs)
+
+        txtLogs = findViewById(R.id.txtLogs)
+        scroll = findViewById(R.id.logsScroll)
+
+        findViewById<ImageButton>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.btnClear).setOnClickListener {
+            LogStore.clear()
+            update()
+        }
+        findViewById<TextView>(R.id.btnCopyLogs).setOnClickListener {
+            copyLogsToClipboard()
+        }
+        findViewById<TextView>(R.id.btnShareLogs).setOnClickListener {
+            shareLogs()
+        }
+    }
+
+    /** Copies the full sanitized log to the system clipboard. */
+    private fun copyLogsToClipboard() {
+        try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("VideoLive Advanced Logs", LogStore.snapshot()))
+            Toast.makeText(this, R.string.logs_copied, Toast.LENGTH_SHORT).show()
+        } catch (t: Throwable) {
+            Toast.makeText(this, "Copy failed: ${t.javaClass.simpleName}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Opens the Android share sheet so the log can be sent via any app. */
+    private fun shareLogs() {
+        try {
+            val send = Intent(Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_SUBJECT, "VideoLive Advanced Logs")
+                .putExtra(Intent.EXTRA_TEXT, LogStore.snapshot())
+            startActivity(Intent.createChooser(send, "Send logs via"))
+        } catch (t: Throwable) {
+            Toast.makeText(this, "Share failed: ${t.javaClass.simpleName}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        handler.post(refresh)
+    }
+
+    override fun onPause() {
+        handler.removeCallbacks(refresh)
+        super.onPause()
+    }
+
+    private fun update() {
+        val snapshot = LogStore.snapshot()
+        if (snapshot == lastSnapshot) return
+        lastSnapshot = snapshot
+
+        val isNearBottom = scroll.height > 0 &&
+            scroll.scrollY + scroll.height >= txtLogs.height - 80
+        txtLogs.text = snapshot
+        if (isNearBottom) {
+            scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+        }
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/MainActivity.kt ==========
+package com.videolive.app
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.text.InputType
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.view.TextureView
+import android.widget.SeekBar
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
+import androidx.appcompat.widget.SwitchCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.videolive.app.data.PlaylistRepository
+import com.videolive.app.data.ProjectStore
+import com.videolive.app.data.SecurePrefs
+import com.videolive.app.data.SettingsRepository
+import com.videolive.app.data.ThemeStore
+import com.videolive.app.data.VideoRepository
+import com.videolive.app.ffmpeg.FFmpegCommandBuilder
+import com.videolive.app.ffmpeg.FFmpegRuntime
+import com.videolive.app.media.LoadedVideo
+import com.videolive.app.media.TexturePreview
+import com.videolive.app.media.VideoInputException
+import com.videolive.app.media.VideoLoader
+import com.videolive.app.model.BitrateMode
+import com.videolive.app.model.FrameMode
+import com.videolive.app.model.LoopMode
+import com.videolive.app.model.StopPolicy
+import com.videolive.app.net.RtmpProbe
+import com.videolive.app.model.Orientation
+import com.videolive.app.model.Quality
+import com.videolive.app.model.StreamConfig
+import com.videolive.app.model.VideoInfo
+import com.videolive.app.stream.StreamService
+import com.videolive.app.util.DeviceCaps
+import com.videolive.app.util.Net
+import com.videolive.app.util.Texts
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+class MainActivity : AppCompatActivity() {
+
+    companion object {
+        const val EXTRA_PROJECT_ID = "project_id"
+        const val EXTRA_PROJECT_NAME = "project_name"
+    }
+
+    private lateinit var settingsRepo: SettingsRepository
+
+    /** The stream project currently loaded into the dashboard (null = legacy
+     * single-configuration mode opened directly). */
+    private var activeProjectId: String? = null
+
+    private var keyVisible = false
+    private var suppressMicListener = false
+    private var bitrateSelectionRestored = false
+
+    /** Guards START LIVE: one preparation/stream start at a time. */
+    @Volatile
+    private var startInProgress = false
+
+    private lateinit var batteryWarning: TextView
+    private lateinit var liveBanner: TextView
+    private lateinit var previewFrame: FrameLayout
+    private lateinit var previewTexture: TextureView
+    private lateinit var preview: TexturePreview
+    private lateinit var previewThumb: ImageView
+    private lateinit var emptyPreview: LinearLayout
+    private lateinit var previewStatus: TextView
+    private lateinit var videoInfoBlock: LinearLayout
+    private lateinit var txtFileName: TextView
+    private lateinit var txtMeta: TextView
+    private lateinit var txtAudioPresent: TextView
+    private lateinit var switchFullUrl: SwitchCompat
+    private lateinit var serverKeyGroup: LinearLayout
+    private lateinit var fullUrlGroup: LinearLayout
+    private lateinit var etServerUrl: EditText
+    private lateinit var etStreamKey: EditText
+    private lateinit var etFullUrl: EditText
+    private lateinit var btnKeyEye: ImageButton
+    private lateinit var optVertical: LinearLayout
+    private lateinit var optHorizontal: LinearLayout
+    private lateinit var spinnerBitrate: Spinner
+    private lateinit var etBitrate: EditText
+    private lateinit var seekVolume: SeekBar
+    private lateinit var txtVolume: TextView
+    private lateinit var switchMic: SwitchCompat
+    private lateinit var optLoopOne: LinearLayout
+    private lateinit var optLoopAll: LinearLayout
+
+    // Phase 3-5 UI.
+    private lateinit var micVolumeRow: LinearLayout
+    private lateinit var seekMicVolume: SeekBar
+    private lateinit var txtMicVolume: TextView
+    private lateinit var txtPlaylistSummary: TextView
+    private lateinit var chipFit: TextView
+    private lateinit var chipFill: TextView
+    private lateinit var seekZoom: SeekBar
+    private lateinit var txtZoom: TextView
+    private lateinit var seekPanX: SeekBar
+    private lateinit var txtPanX: TextView
+    private lateinit var seekPanY: SeekBar
+    private lateinit var txtPanY: TextView
+
+    private val qualityChips = mutableMapOf<Quality, TextView>()
+    private val fpsChips = mutableMapOf<Int, TextView>()
+
+    private val pickVideo =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) onVideoPicked(uri)
+        }
+
+    private val micPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                suppressMicListener = true
+                switchMic.isChecked = false
+                suppressMicListener = false
+                settingsRepo.micOn = false
+                toast("Microphone permission denied")
+            } else {
+                settingsRepo.micOn = true
+            }
+        }
+
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
+        setContentView(R.layout.activity_main)
+        settingsRepo = SettingsRepository(this)
+
+        // Stream project support: ProjectsActivity already applied the saved
+        // snapshot to the global state before launching us; here we just
+        // remember which project this dashboard represents.
+        activeProjectId = intent.getStringExtra(EXTRA_PROJECT_ID)
+        if (activeProjectId != null) {
+            val projectName = intent.getStringExtra(EXTRA_PROJECT_NAME).orEmpty()
+            findViewById<TextView>(R.id.txtHeaderSubtitle).text =
+                if (projectName.isNotEmpty()) "Project: $projectName"
+                else getString(R.string.header_subtitle)
+            getSharedPreferences("vl_project_session", MODE_PRIVATE)
+                .edit().putString("active_id", activeProjectId).apply()
+        }
+
+        batteryWarning = findViewById(R.id.batteryWarning)
+        liveBanner = findViewById(R.id.liveBanner)
+        previewFrame = findViewById(R.id.previewFrame)
+        previewTexture = findViewById(R.id.previewTexture)
+        preview = TexturePreview(previewTexture).apply {
+            onEnded = { stopPreview() }
+            onFailed = {
+                toast("Preview not available for this video.")
+                stopPreview()
+            }
+        }
+        previewThumb = findViewById(R.id.previewThumb)
+        emptyPreview = findViewById(R.id.emptyPreview)
+        previewStatus = findViewById(R.id.previewStatus)
+        videoInfoBlock = findViewById(R.id.videoInfoBlock)
+        txtFileName = findViewById(R.id.txtFileName)
+        txtMeta = findViewById(R.id.txtMeta)
+        txtAudioPresent = findViewById(R.id.txtAudioPresent)
+        switchFullUrl = findViewById(R.id.switchFullUrl)
+        serverKeyGroup = findViewById(R.id.serverKeyGroup)
+        fullUrlGroup = findViewById(R.id.fullUrlGroup)
+        etServerUrl = findViewById(R.id.etServerUrl)
+        etStreamKey = findViewById(R.id.etStreamKey)
+        etFullUrl = findViewById(R.id.etFullUrl)
+        btnKeyEye = findViewById(R.id.btnKeyEye)
+        optVertical = findViewById(R.id.optVertical)
+        optHorizontal = findViewById(R.id.optHorizontal)
+        spinnerBitrate = findViewById(R.id.spinnerBitrate)
+        etBitrate = findViewById(R.id.etBitrate)
+        seekVolume = findViewById(R.id.seekVolume)
+        txtVolume = findViewById(R.id.txtVolume)
+        switchMic = findViewById(R.id.switchMic)
+        optLoopOne = findViewById(R.id.optLoopOne)
+        optLoopAll = findViewById(R.id.optLoopAll)
+        micVolumeRow = findViewById(R.id.micVolumeRow)
+        seekMicVolume = findViewById(R.id.seekMicVolume)
+        txtMicVolume = findViewById(R.id.txtMicVolume)
+        txtPlaylistSummary = findViewById(R.id.txtPlaylistSummary)
+        chipFit = findViewById(R.id.chipFit)
+        chipFill = findViewById(R.id.chipFill)
+        seekZoom = findViewById(R.id.seekZoom)
+        txtZoom = findViewById(R.id.txtZoom)
+        seekPanX = findViewById(R.id.seekPanX)
+        txtPanX = findViewById(R.id.txtPanX)
+        seekPanY = findViewById(R.id.seekPanY)
+        txtPanY = findViewById(R.id.txtPanY)
+
+        qualityChips[Quality.Q360] = findViewById(R.id.q360)
+        qualityChips[Quality.Q480] = findViewById(R.id.q480)
+        qualityChips[Quality.Q720] = findViewById(R.id.q720)
+        qualityChips[Quality.Q1080] = findViewById(R.id.q1080)
+        fpsChips[24] = findViewById(R.id.fps24)
+        fpsChips[25] = findViewById(R.id.fps25)
+        fpsChips[30] = findViewById(R.id.fps30)
+        fpsChips[50] = findViewById(R.id.fps50)
+        fpsChips[60] = findViewById(R.id.fps60)
+
+        wireEvents()
+        restoreSettings()
+        applyPreviewAspect()
+        findViewById<ImageButton>(R.id.btnTheme).setOnClickListener { openThemePicker() }
+        // Warm up the streaming engine in the background: loads the native
+        // FFmpeg libraries and runs the -version execution test so the result
+        // (and the real reason if it fails) is in Advanced Logs immediately.
+        lifecycleScope.launch(Dispatchers.IO) {
+            FFmpegRuntime.verify(this@MainActivity)
+        }
+        // Clean up leftover video cache files from crashed/killed sessions.
+        // Never touches an in-progress stream.
+        lifecycleScope.launch(Dispatchers.IO) {
+            if (!StreamService.isStreaming) {
+                com.videolive.app.media.VideoLoader.purgeStaleCache(this@MainActivity)
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkBatteryOptimization()
+        liveBanner.visibility = if (StreamService.isStreaming) View.VISIBLE else View.GONE
+        refreshPlaylistSummary()
+        askNotificationPermissionIfNeeded()
+        if (VideoRepository.current == null) {
+            settingsRepo.videoUri?.let { reloadSavedVideo(Uri.parse(it)) }
+        } else {
+            renderVideoCard(VideoRepository.current!!)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (previewTexture.visibility == View.VISIBLE) {
+            stopPreview()
+        }
+    }
+
+    private fun wireEvents() {
+        findViewById<ImageButton>(R.id.btnSettings).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        findViewById<TextView>(R.id.btnChoose).setOnClickListener {
+            pickVideo.launch(
+                arrayOf(
+                    "video/*",
+                    "application/octet-stream",
+                    "video/x-matroska",
+                    "application/x-matroska"
+                )
+            )
+        }
+
+        previewThumb.setOnClickListener { startPreview() }
+
+        switchFullUrl.setOnCheckedChangeListener { _, checked ->
+            settingsRepo.fullUrlMode = checked
+            serverKeyGroup.visibility = if (checked) View.GONE else View.VISIBLE
+            fullUrlGroup.visibility = if (checked) View.VISIBLE else View.GONE
+        }
+
+        btnKeyEye.setOnClickListener {
+            keyVisible = !keyVisible
+            etStreamKey.inputType = if (keyVisible) {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            } else {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            }
+            etStreamKey.setSelection(etStreamKey.text.length)
+            btnKeyEye.setImageResource(if (keyVisible) R.drawable.ic_eye_off else R.drawable.ic_eye)
+        }
+
+        optVertical.setOnClickListener { selectOrientation(Orientation.VERTICAL) }
+        optHorizontal.setOnClickListener { selectOrientation(Orientation.HORIZONTAL) }
+
+        qualityChips.forEach { (q, view) -> view.setOnClickListener { selectQuality(q) } }
+        fpsChips.forEach { (fps, view) -> view.setOnClickListener { selectFps(fps) } }
+
+        spinnerBitrate.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            arrayOf("Auto", "Manual")
+        )
+        spinnerBitrate.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val manual = pos == 1
+                settingsRepo.bitrateMode = if (manual) BitrateMode.MANUAL else BitrateMode.AUTO
+                etBitrate.visibility = if (manual) View.VISIBLE else View.GONE
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        seekVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtVolume.text = "$progress%"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settingsRepo.videoVolumePct = sb?.progress ?: 100
+            }
+        })
+
+        switchMic.setOnCheckedChangeListener { _, checked ->
+            if (suppressMicListener) return@setOnCheckedChangeListener
+            if (checked) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    settingsRepo.micOn = true
+                } else {
+                    micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            } else {
+                settingsRepo.micOn = false
+            }
+            micVolumeRow.visibility = if (switchMic.isChecked) View.VISIBLE else View.GONE
+        }
+
+        optLoopOne.setOnClickListener { selectLoop(LoopMode.ONE) }
+        optLoopAll.setOnClickListener {
+            startActivity(Intent(this, PlaylistActivity::class.java))
+        }
+
+        // Phase 3/8 managers.
+        findViewById<TextView>(R.id.btnPlaylist).setOnClickListener {
+            startActivity(Intent(this, PlaylistActivity::class.java))
+        }
+        findViewById<TextView>(R.id.btnDestinations).setOnClickListener {
+            startActivity(Intent(this, DestinationsActivity::class.java))
+        }
+
+        // Phase 5: independent mic gain.
+        micVolumeRow.visibility = if (switchMic.isChecked) View.VISIBLE else View.GONE
+        seekMicVolume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtMicVolume.text = "$progress%"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settingsRepo.micVolumePct = sb?.progress ?: 100
+            }
+        })
+
+        // Phase 4: framing controls (applied to the encoder at stream start).
+        chipFit.setOnClickListener { selectFrameMode(FrameMode.FIT) }
+        chipFill.setOnClickListener { selectFrameMode(FrameMode.FILL) }
+        seekZoom.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtZoom.text = "${progress + 100}%"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settingsRepo.zoomPct = (sb?.progress ?: 0) + 100
+                preview.framing = currentFraming()
+                preview.refreshMatrix()
+            }
+        })
+        seekPanX.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtPanX.text = "${progress - 100}"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settingsRepo.panXPct = (sb?.progress ?: 100) - 100
+                preview.framing = currentFraming()
+                preview.refreshMatrix()
+            }
+        })
+        seekPanY.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtPanY.text = "${progress - 100}"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settingsRepo.panYPct = (sb?.progress ?: 100) - 100
+                preview.framing = currentFraming()
+                preview.refreshMatrix()
+            }
+        })
+        findViewById<TextView>(R.id.btnResetFraming).setOnClickListener {
+            selectFrameMode(FrameMode.FIT)
+            settingsRepo.zoomPct = 100
+            settingsRepo.panXPct = 0
+            settingsRepo.panYPct = 0
+            renderFramingControls()
+            preview.framing = currentFraming()
+            preview.refreshMatrix()
+            toast("Framing reset")
+        }
+
+        findViewById<TextView>(R.id.btnStartLive).setOnClickListener { validateAndStart() }
+        findViewById<TextView>(R.id.btnTestConnection).setOnClickListener {
+            runDestinationTest()
+        }
+        liveBanner.setOnClickListener { startActivity(Intent(this, LiveActivity::class.java)) }
+        batteryWarning.setOnClickListener { requestBatteryExemption() }
+    }
+
+    private fun restoreSettings() {
+        etServerUrl.setText(settingsRepo.serverUrl)
+        etFullUrl.setText(settingsRepo.fullUrl)
+        etStreamKey.setText(SecurePrefs.getStreamKey(this).orEmpty())
+        switchFullUrl.isChecked = settingsRepo.fullUrlMode
+        serverKeyGroup.visibility = if (settingsRepo.fullUrlMode) View.GONE else View.VISIBLE
+        fullUrlGroup.visibility = if (settingsRepo.fullUrlMode) View.VISIBLE else View.GONE
+
+        selectOrientation(settingsRepo.orientation)
+        selectQuality(settingsRepo.quality)
+        selectFps(settingsRepo.fps)
+
+        val savedVolume = settingsRepo.videoVolumePct
+        seekVolume.progress = savedVolume
+        txtVolume.text = "$savedVolume%"
+
+        suppressMicListener = true
+        switchMic.isChecked = settingsRepo.micOn
+        suppressMicListener = false
+        micVolumeRow.visibility = if (settingsRepo.micOn) View.VISIBLE else View.GONE
+        val savedMicVol = settingsRepo.micVolumePct
+        seekMicVolume.progress = savedMicVol
+        txtMicVolume.text = "$savedMicVol%"
+
+        renderFramingControls()
+
+        selectLoop(LoopMode.ONE)
+
+        etBitrate.setText(settingsRepo.manualBitrateKbps.toString())
+        val manual = settingsRepo.bitrateMode == BitrateMode.MANUAL
+        spinnerBitrate.setSelection(if (manual) 1 else 0)
+        etBitrate.visibility = if (manual) View.VISIBLE else View.GONE
+        bitrateSelectionRestored = true
+    }
+
+    private fun selectOrientation(o: Orientation) {
+        settingsRepo.orientation = o
+        optVertical.isSelected = o == Orientation.VERTICAL
+        optHorizontal.isSelected = o == Orientation.HORIZONTAL
+        applyPreviewAspect()
+        // The encoded aspect ratio is fixed for a running RTMP session — the
+        // preview may change freely, but the stream needs a restart.
+        if (StreamService.isStreaming) {
+            toast("Preview updated. The stream keeps its old aspect — restart Live to apply the new one.")
+        }
+    }
+
+    private fun selectQuality(q: Quality) {
+        settingsRepo.quality = q
+        qualityChips.forEach { (k, v) -> v.isSelected = k == q }
+    }
+
+    private fun selectFps(fps: Int) {
+        settingsRepo.fps = fps
+        fpsChips.forEach { (k, v) -> v.isSelected = k == fps }
+    }
+
+    private fun selectLoop(mode: LoopMode) {
+        settingsRepo.loopMode = mode
+        optLoopOne.isSelected = mode == LoopMode.ONE
+        optLoopAll.isSelected = mode == LoopMode.ALL
+    }
+
+    private fun selectFrameMode(mode: FrameMode) {
+        settingsRepo.frameMode = mode
+        chipFit.isSelected = mode == FrameMode.FIT
+        chipFill.isSelected = mode == FrameMode.FILL
+        preview.framing = currentFraming()
+        preview.refreshMatrix()
+    }
+
+    private fun renderFramingControls() {
+        selectFrameMode(settingsRepo.frameMode)
+        val zoom = settingsRepo.zoomPct.coerceIn(100, 300)
+        seekZoom.progress = zoom - 100
+        txtZoom.text = "$zoom%"
+        val px = settingsRepo.panXPct.coerceIn(-100, 100)
+        seekPanX.progress = px + 100
+        txtPanX.text = "$px"
+        val py = settingsRepo.panYPct.coerceIn(-100, 100)
+        seekPanY.progress = py + 100
+        txtPanY.text = "$py"
+    }
+
+    private fun openThemePicker() {
+        val themes = ThemeStore.Theme.values()
+        val current = ThemeStore.current(this)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.theme_title)
+            .setSingleChoiceItems(
+                themes.map { it.label }.toTypedArray(),
+                themes.indexOf(current)
+            ) { dialog, which ->
+                val picked = themes[which]
+                dialog.dismiss()
+                if (picked != current) {
+                    ThemeStore.saveTheme(this, picked)
+                    recreate()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** Summary line under the Playlist Mode card. */
+    private fun refreshPlaylistSummary() {
+        val pl = PlaylistRepository.load(this)
+        txtPlaylistSummary.text = if (pl != null && pl.items.size >= 2) {
+            val mins = pl.items.sumOf { it.durationMs } / 60000
+            val modeLabel = when (pl.loopMode) {
+                LoopMode.ALL -> "Loop All"
+                LoopMode.SEQUENTIAL -> "Sequential"
+                LoopMode.SHUFFLE -> "Shuffle"
+                else -> "Loop One"
+            }
+            "${pl.items.size} videos • $modeLabel • ~${mins} min per pass" +
+                (if (pl.stopPolicy == StopPolicy.STOP_AFTER_DURATION)
+                    " • stops after ${pl.sessionDurationHours}h" else "")
+        } else {
+            getString(R.string.loop_all_sub)
+        }
+    }
+
+    private fun onVideoPicked(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: Throwable) {
+        }
+        settingsRepo.videoUri = uri.toString()
+        loadVideo(uri)
+    }
+
+    private fun reloadSavedVideo(uri: Uri) {
+        loadVideo(uri)
+    }
+
+    private fun loadVideo(uri: Uri) {
+        // Already prepared for exactly this Uri (screen rotation, returning from
+        // the Live/Settings screens, app resume): reuse it — never re-copy.
+        val alreadyLoaded = VideoRepository.current
+        if (alreadyLoaded != null && VideoRepository.currentUri == uri) {
+            renderVideoCard(alreadyLoaded)
+            return
+        }
+        stopPreview()
+        previewStatus.text = getString(R.string.analyzing_video)
+        emptyPreview.visibility = View.VISIBLE
+        previewThumb.visibility = View.GONE
+        videoInfoBlock.visibility = View.GONE
+        VideoRepository.current = null
+
+        lifecycleScope.launch {
+            // Phase 1 — validate the content:// Uri and read platform metadata.
+            // Fast, and it makes the card appear immediately.
+            val inspection = try {
+                withContext(Dispatchers.IO) { VideoLoader.inspect(this@MainActivity, uri) }
+            } catch (e: VideoInputException) {
+                showPickError(e.message ?: "Unable to read this video.")
+                return@launch
+            } catch (t: Throwable) {
+                showPickError("Unable to read this video.")
+                return@launch
+            }
+            renderQuickCard(inspection)
+
+            // Phase 2 — byte-level bridge: complete copy of the video into the
+            // private FFmpeg cache + real FFprobe verification of that file.
+            // Single-flight: if a preparation is already running (e.g. START
+            // LIVE tapped during selection), it is reused, never duplicated.
+            previewStatus.text = "Preparing video..."
+            val loaded = try {
+                VideoLoader.prepareOnce(this@MainActivity, uri, inspection) { copied, total ->
+                    val text = if (total > 0) {
+                        "Copying video ${((copied * 100) / total).toInt()}% " +
+                            "(${Texts.formatSize(copied)} / ${Texts.formatSize(total)})"
+                    } else {
+                        "Copying video ${Texts.formatSize(copied)}"
+                    }
+                    runOnUiThread {
+                        if (VideoRepository.current == null) previewStatus.text = text
+                    }
+                }
+            } catch (e: VideoInputException) {
+                showPickError(e.message ?: "Unable to read this video.")
+                return@launch
+            } catch (t: Throwable) {
+                showPickError("Unable to read this video.")
+                return@launch
+            }
+            VideoRepository.current = loaded
+            renderVideoCard(loaded)
+        }
+    }
+
+    private fun showPickError(message: String) {
+        settingsRepo.videoUri = null
+        VideoRepository.current = null
+        toast(message)
+        previewStatus.text = message
+        emptyPreview.visibility = View.VISIBLE
+        previewThumb.visibility = View.GONE
+        videoInfoBlock.visibility = View.GONE
+    }
+
+    private fun renderQuickCard(inspection: VideoLoader.Inspection) {
+        val info = inspection.platformInfo ?: return
+        txtFileName.text = inspection.displayName
+        txtMeta.text = buildMetaLine(info, inspection.sizeBytes)
+        txtAudioPresent.text = "Audio: checking…"
+        videoInfoBlock.visibility = View.VISIBLE
+        emptyPreview.visibility = View.GONE
+        previewThumb.visibility = View.GONE
+
+        val uriString = settingsRepo.videoUri ?: return
+        lifecycleScope.launch {
+            val bitmap = withContext(Dispatchers.IO) { loadThumbnail(Uri.parse(uriString)) }
+            if (bitmap != null && VideoRepository.current == null) {
+                previewThumb.setImageBitmap(bitmap)
+                previewThumb.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun buildMetaLine(info: VideoInfo, sizeBytes: Long): String {
+        val fpsPart = if (info.fps > 0) "${info.fps} fps" else "fps —"
+        val sizePart = Texts.formatSize(if (sizeBytes > 0) sizeBytes else info.sizeBytes)
+        return listOf(
+            Texts.formatDuration(info.durationMs),
+            "${info.width}x${info.height}",
+            fpsPart,
+            sizePart
+        ).joinToString("  •  ")
+    }
+
+    private fun renderVideoCard(loaded: LoadedVideo) {
+        val info = loaded.info
+        txtFileName.text = loaded.source.displayName
+        txtMeta.text = buildMetaLine(info, loaded.source.sizeBytes)
+        txtAudioPresent.text = if (info.hasAudio) {
+            "Audio: available${if (info.audioCodec.isNotEmpty()) " (${info.audioCodec})" else ""}"
+        } else {
+            "Audio: none — a silent track will be added for YouTube"
+        }
+        videoInfoBlock.visibility = View.VISIBLE
+        emptyPreview.visibility = View.GONE
+        previewThumb.visibility = View.GONE
+
+        val uriString = settingsRepo.videoUri ?: return
+        lifecycleScope.launch {
+            val bitmap = withContext(Dispatchers.IO) { loadThumbnail(Uri.parse(uriString)) }
+            if (bitmap != null && VideoRepository.current === loaded) {
+                previewThumb.setImageBitmap(bitmap)
+                previewThumb.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun loadThumbnail(uri: Uri): Bitmap? = try {
+        val mmr = MediaMetadataRetriever()
+        mmr.setDataSource(this, uri)
+        val bmp = mmr.frameAtTime
+        mmr.release()
+        bmp
+    } catch (t: Throwable) {
+        null
+    }
+
+    private fun startPreview() {
+        val uriString = settingsRepo.videoUri ?: return
+        previewThumb.visibility = View.GONE
+        emptyPreview.visibility = View.GONE
+        previewTexture.visibility = View.VISIBLE
+        preview.framing = currentFraming()
+        preview.play(this, Uri.parse(uriString))
+    }
+
+    private fun stopPreview() {
+        preview.stop()
+        previewTexture.visibility = View.GONE
+        if (VideoRepository.current != null && previewThumb.drawable != null) {
+            previewThumb.visibility = View.VISIBLE
+        } else {
+            emptyPreview.visibility = View.VISIBLE
+            previewStatus.text = getString(R.string.no_video_selected)
+        }
+    }
+
+    private fun currentFraming() = TexturePreview.Framing(
+        mode = settingsRepo.frameMode,
+        zoomPct = settingsRepo.zoomPct,
+        panXPct = settingsRepo.panXPct,
+        panYPct = settingsRepo.panYPct
+    )
+
+    /**
+     * Phase 2: the preview canvas itself becomes exactly 16:9 or 9:16, so a
+     * portrait stream shows a true portrait box, never a landscape box with a
+     * small vertical video inside.
+     */
+    private fun applyPreviewAspect() {
+        previewFrame.post {
+            val parentW = (previewFrame.parent as? View)?.width ?: previewFrame.width
+            if (parentW <= 0) return@post
+            val lp = previewFrame.layoutParams
+            if (settingsRepo.orientation == Orientation.VERTICAL) {
+                val maxH = (resources.displayMetrics.heightPixels * 0.52f).toInt()
+                val h = minOf((parentW * 16f / 9f).toInt(), maxH)
+                val w = (h * 9f / 16f).toInt()
+                if (lp.width != w || lp.height != h) {
+                    lp.width = w
+                    lp.height = h
+                    (lp as? android.widget.LinearLayout.LayoutParams)?.gravity =
+                        android.view.Gravity.CENTER_HORIZONTAL
+                    previewFrame.layoutParams = lp
+                }
+            } else {
+                val w = parentW
+                val h = (w * 9f / 16f).toInt()
+                if (lp.width != w || lp.height != h) {
+                    lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    lp.height = h
+                    previewFrame.layoutParams = lp
+                }
+            }
+            preview.refreshMatrix()
+        }
+    }
+
+    /**
+     * Idempotent START LIVE entry point. Rapid taps cannot create duplicate
+     * sessions: while a start is being prepared or a stream is running, every
+     * additional tap is rejected.
+     */
+    private fun validateAndStart() {
+        if (StreamService.isStreaming) {
+            // Single-active-stream policy: never a second encoder or RTMP
+            // session. Offer the live dashboard instead of a plain toast.
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.projects_already_live_title)
+                .setMessage(R.string.projects_already_live_body)
+                .setPositiveButton(R.string.projects_open_live) { _, _ ->
+                    startActivity(Intent(this, LiveActivity::class.java))
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+            return
+        }
+        if (startInProgress) {
+            toast("Please wait — the previous START is still being prepared.")
+            return
+        }
+        // Persist the dashboard configuration into the stream project BEFORE
+        // preparing, so the exact settings used are what survives restarts.
+        // (Snapshot only — the running engine is not touched.)
+        activeProjectId?.let { pid ->
+            ProjectStore.snapshotCurrentInto(
+                this,
+                pid,
+                "Streaming",
+                etStreamKey.text.toString().trim().ifEmpty { null }
+            )
+        }
+        // Phase 3: playlist sessions prepare their own items (with cache
+        // reuse) inside the service — no pre-selected single video needed.
+        val playlist = PlaylistRepository.load(this)
+        if (settingsRepo.playlistEnabled && playlist != null && playlist.items.size >= 2) {
+            startInProgress = true
+            com.videolive.app.ffmpeg.LogStore.startSession()
+            startStreamWith(null)
+            return
+        }
+        val loaded = VideoRepository.current
+        if (loaded == null) {
+            // The temporary bridge copy may have been deleted after the last
+            // stream stopped — rebuild the FFmpeg input before starting.
+            val uriString = settingsRepo.videoUri
+            if (uriString == null) {
+                toast("Please select a video.")
+                return
+            }
+            toast("Preparing video for streaming...")
+            startInProgress = true
+            com.videolive.app.ffmpeg.LogStore.startSession()
+            val startButton = findViewById<TextView>(R.id.btnStartLive)
+            startButton.isEnabled = false
+            lifecycleScope.launch {
+                val prepared = try {
+                    VideoLoader.loadOnce(this@MainActivity, Uri.parse(uriString))
+                } catch (e: VideoInputException) {
+                    toast(e.message ?: "Unable to read this video.")
+                    startButton.isEnabled = true
+                    startInProgress = false
+                    return@launch
+                } catch (t: Throwable) {
+                    toast("Unable to read this video.")
+                    startButton.isEnabled = true
+                    startInProgress = false
+                    return@launch
+                }
+                startButton.isEnabled = true
+                startStreamWith(prepared)
+            }
+            return
+        }
+        startInProgress = true
+        com.videolive.app.ffmpeg.LogStore.startSession()
+        startStreamWith(loaded)
+    }
+
+    private fun startStreamWith(loaded: LoadedVideo?) {
+        // Releases the START guard and re-enables the button on any abort path.
+        fun abort(message: String) {
+            toast(message)
+            startInProgress = false
+        }
+
+        if (!switchFullUrl.isChecked) {
+            val server = etServerUrl.text.toString().trim()
+            val key = etStreamKey.text.toString().trim()
+            if (!FFmpegCommandBuilder.isValidRtmpUrl(server)) {
+                abort("Please enter a valid RTMP/RTMPS server URL.")
+                return
+            }
+            if (key.isEmpty()) {
+                abort("Please enter your YouTube Stream Key.")
+                return
+            }
+        } else {
+            val full = etFullUrl.text.toString().trim()
+            if (!FFmpegCommandBuilder.isValidRtmpUrl(full)) {
+                abort("Please enter a valid full RTMP/RTMPS URL.")
+                return
+            }
+        }
+        if (!Net.isOnline(this)) {
+            abort("Network connection unavailable.")
+            return
+        }
+        // Real FFmpeg runtime verification: native library present for this
+        // device's ABI AND a successful `ffmpeg -version` execution test.
+        val engine = FFmpegRuntime.verify(this)
+        if (!engine.ready) {
+            abort(engine.userMessage + " Check Advanced Logs for the exact reason.")
+            return
+        }
+
+        // Direct start — identical to the last known working pipeline.
+        // (The optional TEST YOUTUBE CONNECTION button remains available for
+        // diagnostics, but it never blocks or gates streaming.)
+        beginStreaming(loaded)
+    }
+
+    private fun beginStreaming(loaded: LoadedVideo?) {
+        if (StreamService.isStreaming) {
+            toast("A stream is already running.")
+            startInProgress = false
+            return
+        }
+        // Persist everything the user just typed.
+        settingsRepo.serverUrl = etServerUrl.text.toString().trim()
+        settingsRepo.fullUrl = etFullUrl.text.toString().trim()
+        val manualKbps = etBitrate.text.toString().toIntOrNull() ?: settingsRepo.manualBitrateKbps
+        settingsRepo.manualBitrateKbps = manualKbps
+
+        SecurePrefs.saveStreamKey(this, etStreamKey.text.toString().trim())
+
+        var fps = settingsRepo.fps
+        val (adjustedFps, note) = DeviceCaps.adjustFpsIfNeeded(settingsRepo.quality.label, fps)
+        if (note != null) {
+            fps = adjustedFps
+            selectFps(fps)
+            toast(note)
+        }
+
+        // Phase 3: if a saved playlist with 2+ items exists and the
+        // experimental gate is on, stream it as ONE continuous session.
+        val playlist = PlaylistRepository.load(this)
+        val usePlaylist = settingsRepo.playlistEnabled &&
+            playlist != null && playlist.items.size >= 2
+
+        val config = if (usePlaylist && playlist != null) {
+            StreamConfig(
+                videoUri = playlist.items.first().uri,
+                videoName = "Playlist (${playlist.items.size} videos)",
+                hasAudio = playlist.items.first().hasAudio,
+                orientation = settingsRepo.orientation,
+                quality = settingsRepo.quality,
+                fps = fps,
+                bitrateMode = settingsRepo.bitrateMode,
+                manualBitrateKbps = settingsRepo.manualBitrateKbps,
+                videoVolumePct = settingsRepo.videoVolumePct,
+                micOn = settingsRepo.micOn,
+                loopMode = playlist.loopMode,
+                fullUrlMode = settingsRepo.fullUrlMode,
+                serverUrl = settingsRepo.serverUrl,
+                fullUrl = settingsRepo.fullUrl,
+                items = playlist.items,
+                sessionDurationHours = playlist.sessionDurationHours,
+                stopPolicy = playlist.stopPolicy,
+                frameMode = settingsRepo.frameMode,
+                zoomPct = settingsRepo.zoomPct,
+                panXPct = settingsRepo.panXPct,
+                panYPct = settingsRepo.panYPct,
+                micVolumePct = settingsRepo.micVolumePct,
+                encoderPref = settingsRepo.encoderPref
+            )
+        } else {
+            val single = loaded ?: run {
+                toast("Please select a video.")
+                startInProgress = false
+                return
+            }
+            StreamConfig(
+                videoUri = settingsRepo.videoUri.orEmpty(),
+                videoName = single.source.displayName,
+                hasAudio = single.info.hasAudio,
+                orientation = settingsRepo.orientation,
+                quality = settingsRepo.quality,
+                fps = fps,
+                bitrateMode = settingsRepo.bitrateMode,
+                manualBitrateKbps = settingsRepo.manualBitrateKbps,
+                videoVolumePct = settingsRepo.videoVolumePct,
+                micOn = settingsRepo.micOn,
+                loopMode = LoopMode.ONE,
+                fullUrlMode = settingsRepo.fullUrlMode,
+                serverUrl = settingsRepo.serverUrl,
+                fullUrl = settingsRepo.fullUrl,
+                frameMode = settingsRepo.frameMode,
+                zoomPct = settingsRepo.zoomPct,
+                panXPct = settingsRepo.panXPct,
+                panYPct = settingsRepo.panYPct,
+                micVolumePct = settingsRepo.micVolumePct,
+                encoderPref = settingsRepo.encoderPref
+            )
+        }
+
+        com.videolive.app.ffmpeg.LogStore.event(
+            if (usePlaylist) {
+                "Playlist session: ${config.items.size} items, mode=${config.loopMode}, " +
+                    "policy=${config.stopPolicy}"
+            } else {
+                "Source URI validated: ${config.videoName} " +
+                    "(${if (loaded?.source?.isTemporaryCopy == true) "cache bridge" else "direct read"})"
+            }
+        )
+        StreamService.start(this, config, activeProjectId)
+        // The service owns the session from here; its own isStreaming guard
+        // rejects any duplicate START.
+        startInProgress = false
+        startActivity(Intent(this, LiveActivity::class.java))
+    }
+
+    private fun checkBatteryOptimization() {
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        val exempt = pm.isIgnoringBatteryOptimizations(packageName)
+        batteryWarning.visibility = if (exempt) View.GONE else View.VISIBLE
+    }
+
+    private fun requestBatteryExemption() {
+        try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$packageName")
+                )
+            )
+        } catch (t: Throwable) {
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (t2: Throwable) {
+                toast("Please allow unrestricted battery usage for this app in system settings.")
+            }
+        }
+    }
+
+    private fun askNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    /** Builds the destination URL from the current fields for testing only. */
+    private fun currentDestinationForTest(): String? {
+        return if (switchFullUrl.isChecked) {
+            val url = etFullUrl.text.toString().trim()
+            if (FFmpegCommandBuilder.isValidRtmpUrl(url) && url.none { it.isWhitespace() }) url
+            else null
+        } else {
+            FFmpegCommandBuilder.buildDestinationUrl(
+                fullUrlMode = false,
+                serverUrl = etServerUrl.text.toString().trim(),
+                fullUrl = "",
+                streamKey = etStreamKey.text.toString().trim()
+            )
+        }
+    }
+
+    private fun runDestinationTest() {
+        val url = currentDestinationForTest()
+        if (url == null) {
+            toast("Please enter a valid RTMP/RTMPS destination first.")
+            return
+        }
+        val testButton = findViewById<TextView>(R.id.btnTestConnection)
+        testButton.isEnabled = false
+        val originalText = testButton.text
+        testButton.text = "Testing..."
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { RtmpProbe.probe(url) }
+            testButton.isEnabled = true
+            testButton.text = originalText
+            val suffix = if (result.success) {
+                "\n\nRTMP handshake succeeded — the server is reachable and speaks RTMP(S). " +
+                    "The actual publish happens when you go live."
+            } else {
+                "\n\nFix the failing step before going live."
+            }
+            MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle(if (result.success) "Destination reachable ✓" else "Destination test failed")
+                .setMessage(result.report() + suffix)
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/PlaylistActivity.kt ==========
+package com.videolive.app
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.view.Gravity
+import android.widget.ArrayAdapter
+import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.videolive.app.data.PlaylistRepository
+import com.videolive.app.ffmpeg.LogStore
+import com.videolive.app.media.VideoLoader
+import com.videolive.app.model.LoopMode
+import com.videolive.app.model.StopPolicy
+import com.videolive.app.model.StreamItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Phase 3 — playlist manager.
+ *
+ * The playlist is metadata only (URIs + probed facts). Real byte preparation
+ * happens inside StreamService right before streaming, with cache reuse, so
+ * this screen never copies video data.
+ *
+ * One RTMP session plays the whole list through the FFmpeg concat demuxer;
+ * items must share codec/resolution/audio layout for seamless playback.
+ */
+class PlaylistActivity : AppCompatActivity() {
+
+    private val items = mutableListOf<StreamItem>()
+    private var adding = false
+
+    private lateinit var listContainer: LinearLayout
+    private lateinit var txtEmpty: TextView
+    private lateinit var txtAdding: TextView
+    private lateinit var txtTotal: TextView
+    private lateinit var spinnerDuration: Spinner
+
+    private val addVideos =
+        registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            if (uris.isNullOrEmpty()) return@registerForActivityResult
+            ingestUris(uris)
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
+        setContentView(R.layout.activity_playlist)
+
+        listContainer = findViewById(R.id.listPlaylist)
+        txtEmpty = findViewById(R.id.txtPlaylistEmpty)
+        txtAdding = findViewById(R.id.txtAdding)
+        txtTotal = findViewById(R.id.txtPlaylistTotal)
+        spinnerDuration = findViewById(R.id.spinnerDuration)
+
+        findViewById<ImageButton>(R.id.btnBack).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.btnAddVideos).setOnClickListener {
+            if (adding) {
+                toast("Still adding videos, please wait...")
+                return@setOnClickListener
+            }
+            addVideos.launch(arrayOf("video/*", "application/octet-stream"))
+        }
+        findViewById<TextView>(R.id.btnClearPlaylist).setOnClickListener {
+            items.clear()
+            render()
+        }
+        findViewById<TextView>(R.id.btnSaveUse).setOnClickListener { saveAndUse() }
+
+        spinnerDuration.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            arrayOf(
+                getString(R.string.duration_unlimited),
+                "2 hours",
+                "6 hours",
+                "12 hours"
+            )
+        )
+
+        PlaylistRepository.load(this)?.let { saved ->
+            items.addAll(saved.items)
+            when (saved.loopMode) {
+                LoopMode.ALL -> findViewById<RadioButton>(R.id.rbLoopAll).isChecked = true
+                LoopMode.SEQUENTIAL -> findViewById<RadioButton>(R.id.rbSequential).isChecked = true
+                LoopMode.SHUFFLE -> findViewById<RadioButton>(R.id.rbShuffle).isChecked = true
+                else -> findViewById<RadioButton>(R.id.rbLoopAll).isChecked = true
+            }
+            spinnerDuration.setSelection(hoursToIndex(saved.sessionDurationHours))
+        } ?: run {
+            findViewById<RadioButton>(R.id.rbLoopAll).isChecked = true
+        }
+
+        render()
+    }
+
+    private fun hoursToIndex(hours: Int): Int = when (hours) {
+        2 -> 1
+        6 -> 2
+        12 -> 3
+        else -> 0
+    }
+
+    private fun indexToHours(index: Int): Int = when (index) {
+        1 -> 2
+        2 -> 6
+        3 -> 12
+        else -> 0
+    }
+
+    private fun ingestUris(uris: List<Uri>) {
+        adding = true
+        txtAdding.visibility = android.view.View.VISIBLE
+        txtAdding.text = "Reading video details..."
+        lifecycleScope.launch {
+            var added = 0
+            var failed = 0
+            uris.forEachIndexed { i, uri ->
+                txtAdding.text = "Reading video ${i + 1} of ${uris.size}..."
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Throwable) {
+                }
+                val inspection = try {
+                    withContext(Dispatchers.IO) {
+                        VideoLoader.inspect(this@PlaylistActivity, uri)
+                    }
+                } catch (t: Throwable) {
+                    failed++
+                    null
+                }
+                if (inspection != null) {
+                    val info = inspection.platformInfo
+                    items += StreamItem(
+                        uri = uri.toString(),
+                        displayName = inspection.displayName,
+                        sizeBytes = inspection.sizeBytes,
+                        durationMs = info?.durationMs ?: 0L,
+                        width = info?.width ?: 0,
+                        height = info?.height ?: 0,
+                        fps = info?.fps ?: 0,
+                        hasAudio = info?.hasAudio ?: true
+                    )
+                    added++
+                }
+                render()
+            }
+            adding = false
+            txtAdding.visibility = android.view.View.GONE
+            LogStore.event("Playlist: added $added video(s), $failed failed")
+            if (failed > 0) toast("$failed file(s) could not be read and were skipped")
+            render()
+        }
+    }
+
+    private fun selectedLoopMode(): LoopMode = when {
+        findViewById<RadioButton>(R.id.rbSequential).isChecked -> LoopMode.SEQUENTIAL
+        findViewById<RadioButton>(R.id.rbShuffle).isChecked -> LoopMode.SHUFFLE
+        else -> LoopMode.ALL
+    }
+
+    private fun saveAndUse() {
+        if (items.size < 2) {
+            toast("Add at least 2 videos to use Playlist mode.")
+            return
+        }
+        // Warn early when formats obviously differ (width/height known).
+        val sizes = items.filter { it.width > 0 && it.height > 0 }
+            .map { it.width to it.height }
+            .distinct()
+        if (sizes.size > 1) {
+            toast("Warning: resolutions differ — the stream will refuse mismatched items.")
+        }
+        val loopMode = selectedLoopMode()
+        val hours = indexToHours(spinnerDuration.selectedItemPosition)
+        PlaylistRepository.save(
+            this,
+            PlaylistRepository.Playlist(
+                items = items.toList(),
+                loopMode = loopMode,
+                sessionDurationHours = hours,
+                stopPolicy = if (hours > 0) StopPolicy.STOP_AFTER_DURATION
+                else StopPolicy.CONTINUE_UNTIL_STOPPED
+            )
+        )
+        LogStore.event(
+            "Playlist saved: ${items.size} items, mode=$loopMode, " +
+                (if (hours > 0) "stop after ${hours}h" else "unlimited")
+        )
+        toast("Playlist saved — START LIVE now streams the whole list.")
+        finish()
+    }
+
+    private fun render() {
+        listContainer.removeAllViews()
+        txtEmpty.visibility = if (items.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
+
+        items.forEachIndexed { index, item ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 14, 0, 14)
+            }
+
+            val number = TextView(this).apply {
+                text = "${index + 1}"
+                textSize = 14f
+                setTextColor(ThemeEngine.color(this@PlaylistActivity, R.attr.vlAccent))
+                setTypeface(null, android.graphics.Typeface.BOLD)
+            }
+
+            val textBlock = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+                ).apply { marginStart = dp(10); marginEnd = dp(8) }
+            }
+            val name = TextView(this).apply {
+                text = item.displayName
+                textSize = 13.5f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                setTextColor(ThemeEngine.color(this@PlaylistActivity, R.attr.vlTextPrimary))
+            }
+            val meta = TextView(this).apply {
+                val mins = if (item.durationMs > 0) " • ${item.durationMs / 60000} min" else ""
+                val res = if (item.width > 0) " • ${item.width}x${item.height}" else ""
+                text = "${formatSize(item.sizeBytes)}$res$mins"
+                textSize = 11f
+                setTextColor(ThemeEngine.color(this@PlaylistActivity, R.attr.vlTextFaint))
+            }
+            textBlock.addView(name)
+            textBlock.addView(meta)
+
+            val up = smallButton("▲") { move(index, -1) }
+            val down = smallButton("▼") { move(index, +1) }
+            val remove = smallButton("✕") {
+                items.removeAt(index)
+                render()
+            }
+
+            row.addView(number)
+            row.addView(textBlock)
+            row.addView(up)
+            row.addView(down)
+            row.addView(remove)
+            listContainer.addView(row)
+
+            if (index < items.size - 1) {
+                val divider = android.view.View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, 1
+                    )
+                    setBackgroundColor(ThemeEngine.color(this@PlaylistActivity, R.attr.vlStroke))
+                }
+                listContainer.addView(divider)
+            }
+        }
+
+        val totalMs = items.sumOf { it.durationMs }
+        txtTotal.text = if (items.isEmpty()) "" else
+            "${items.size} videos • total ${totalMs / 3600000}h ${(totalMs % 3600000) / 60000} min"
+    }
+
+    private fun move(index: Int, delta: Int) {
+        val target = index + delta
+        if (target < 0 || target >= items.size) return
+        val tmp = items[index]
+        items[index] = items[target]
+        items[target] = tmp
+        render()
+    }
+
+    private fun smallButton(label: String, onClick: () -> Unit): TextView {
+        return TextView(this).apply {
+            text = label
+            textSize = 13f
+            setTextColor(ThemeEngine.color(this@PlaylistActivity, R.attr.vlTextSecondary))
+            setBackgroundResource(R.drawable.bg_button_secondary)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.marginStart = dp(6)
+            layoutParams = lp
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun dp(v: Int): Int =
+        (v * resources.displayMetrics.density).toInt()
+
+    private fun formatSize(bytes: Long): String = when {
+        bytes >= 1024L * 1024 * 1024 -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
+        bytes >= 1024L * 1024 -> String.format("%.0f MB", bytes / (1024.0 * 1024))
+        bytes > 0 -> String.format("%.0f KB", bytes / 1024.0)
+        else -> ""
+    }
+
+    private fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/ProjectsActivity.kt ==========
+package com.videolive.app
+
+import android.content.Intent
+import android.os.Bundle
+import android.view.Gravity
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.videolive.app.data.ProjectStore
+import com.videolive.app.data.ThemeStore
+import com.videolive.app.stream.StreamService
+import com.videolive.app.util.ThemeEngine
+
+/**
+ * Premium home screen: persistent Stream Projects.
+ *
+ * Projects are stored by [ProjectStore] and survive app restarts. Opening a
+ * project loads its exact saved configuration (video, destination, key,
+ * quality, fps, bitrate, volumes, mic, loop) into the dashboard. Only ONE
+ * live session can run app-wide — if a stream is live, the banner routes the
+ * user to it instead of allowing a second encoder/RTMP session.
+ */
+class ProjectsActivity : AppCompatActivity() {
+
+    private lateinit var container: LinearLayout
+    private lateinit var emptyHint: TextView
+    private lateinit var liveBanner: TextView
+
+    /** The project currently loaded in the dashboard (if any). */
+    private var activeProjectId: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
+        setContentView(R.layout.activity_projects)
+
+        container = findViewById(R.id.projectsContainer)
+        emptyHint = findViewById(R.id.emptyProjectsHint)
+        liveBanner = findViewById(R.id.liveBannerProjects)
+
+        findViewById<ImageButton>(R.id.btnThemeProjects).setOnClickListener { openThemePicker() }
+        findViewById<TextView>(R.id.btnCreateStream).setOnClickListener { createProject() }
+        liveBanner.setOnClickListener { startActivity(Intent(this, LiveActivity::class.java)) }
+
+        activeProjectId = getSharedPreferences("vl_project_session", MODE_PRIVATE)
+            .getString("active_id", null)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        liveBanner.visibility = if (StreamService.isStreaming) TextView.VISIBLE else TextView.GONE
+        render()
+    }
+
+    private fun render() {
+        container.removeAllViews()
+        val projects = ProjectStore.list(this)
+        emptyHint.visibility = if (projects.isEmpty()) TextView.VISIBLE else TextView.GONE
+
+        projects.forEach { p ->
+            container.addView(buildCard(p))
+        }
+    }
+
+    private fun buildCard(p: ProjectStore.Project): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.bg_card)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+        }
+
+        val name = TextView(this).apply {
+            text = p.name
+            textSize = 17f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(ThemeEngine.color(this@ProjectsActivity, R.attr.vlTextPrimary))
+        }
+        val video = TextView(this).apply {
+            text = p.videoName
+            textSize = 12.5f
+            setTextColor(ThemeEngine.color(this@ProjectsActivity, R.attr.vlTextSecondary))
+        }
+        val status = TextView(this).apply {
+            val live = StreamService.isStreaming && p.id == activeProjectId
+            text = when {
+                live -> "● LIVE now"
+                p.lastStatus.isEmpty() -> "Never streamed"
+                else -> "Last session: ${p.lastStatus}"
+            }
+            textSize = 12f
+            setTextColor(
+                if (live) ThemeEngine.color(this@ProjectsActivity, R.attr.vlAccent)
+                else ThemeEngine.color(this@ProjectsActivity, R.attr.vlTextFaint)
+            )
+            if (live) setTypeface(null, android.graphics.Typeface.BOLD)
+        }
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        actions.addView(actionButton("OPEN", accent = true) { openProject(p) })
+        actions.addView(actionButton("RENAME", accent = false) { renameProject(p) })
+        actions.addView(actionButton("DUPLICATE", accent = false) {
+            ProjectStore.duplicate(this, p.id)
+            render()
+            toast("Project duplicated")
+        })
+        actions.addView(actionButton("DELETE", accent = false) { confirmDelete(p) })
+
+        card.addView(name)
+        card.addView(video)
+        card.addView(status)
+        card.addView(actions)
+        card.setOnClickListener { openProject(p) }
+        return card
+    }
+
+    private fun actionButton(label: String, accent: Boolean, onClick: () -> Unit): TextView =
+        TextView(this).apply {
+            text = label
+            textSize = 11f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(
+                if (accent) ThemeEngine.color(this@ProjectsActivity, R.attr.vlAccent)
+                else ThemeEngine.color(this@ProjectsActivity, R.attr.vlTextSecondary)
+            )
+            setPadding(0, dp(8), dp(18), dp(8))
+            setOnClickListener { onClick() }
+        }
+
+    private fun openProject(p: ProjectStore.Project) {
+        if (StreamService.isStreaming && p.id != activeProjectId) {
+            // Single-active-stream policy: never start a second encoder/RTMP
+            // session. Offer the live dashboard instead.
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.projects_already_live_title)
+                .setMessage(R.string.projects_already_live_body)
+                .setPositiveButton(R.string.projects_open_live) { _, _ ->
+                    startActivity(Intent(this, LiveActivity::class.java))
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+            return
+        }
+        ProjectStore.applyToGlobal(this, p.id)
+        getSharedPreferences("vl_project_session", MODE_PRIVATE)
+            .edit().putString("active_id", p.id).apply()
+        val intent = Intent(this, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_PROJECT_ID, p.id)
+            .putExtra(MainActivity.EXTRA_PROJECT_NAME, p.name)
+        startActivity(intent)
+    }
+
+    private fun createProject() {
+        val input = EditText(this).apply {
+            hint = getString(R.string.project_name_hint)
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.create_stream)
+            .setView(input)
+            .setPositiveButton(R.string.create) { _, _ ->
+                val p = ProjectStore.create(this, input.text.toString())
+                openProject(p)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun renameProject(p: ProjectStore.Project) {
+        val input = EditText(this).apply {
+            setText(p.name)
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.rename_project)
+            .setView(input)
+            .setPositiveButton(R.string.save) { _, _ ->
+                ProjectStore.rename(this, p.id, input.text.toString())
+                render()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun confirmDelete(p: ProjectStore.Project) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.delete_project)
+            .setMessage(getString(R.string.delete_project_body, p.name))
+            .setPositiveButton(R.string.delete) { _, _ ->
+                // Deleting a project never stops a running stream.
+                ProjectStore.delete(this, p.id)
+                if (activeProjectId == p.id) {
+                    getSharedPreferences("vl_project_session", MODE_PRIVATE)
+                        .edit().remove("active_id").apply()
+                    activeProjectId = null
+                }
+                render()
+                toast("Project deleted")
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun openThemePicker() {
+        val themes = ThemeStore.Theme.values()
+        val current = ThemeStore.current(this)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.theme_title)
+            .setSingleChoiceItems(
+                themes.map { it.label }.toTypedArray(),
+                themes.indexOf(current)
+            ) { dialog, which ->
+                dialog.dismiss()
+                ThemeStore.saveTheme(this, themes[which])
+                recreate()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun dp(v: Int): Int =
+        (v * resources.displayMetrics.density).toInt()
+
+    private fun toast(msg: String) =
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/SettingsActivity.kt ==========
+package com.videolive.app
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.ImageButton
+import android.widget.SeekBar
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.videolive.app.util.ThemeEngine
+import androidx.appcompat.widget.SwitchCompat
+import androidx.core.content.ContextCompat
+import com.videolive.app.data.SettingsRepository
+import com.videolive.app.data.ThemeStore
+import com.videolive.app.ffmpeg.FFmpegRuntime
+import com.videolive.app.model.EncoderPref
+import com.videolive.app.util.DeviceCaps
+
+class SettingsActivity : AppCompatActivity() {
+
+    /** Seekbar range 0..15 maps to 35..50 °C. */
+    private fun tempToProgress(c: Int) = (c - 35).coerceIn(0, 15)
+    private fun progressToTemp(p: Int) = p + 35
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ThemeEngine.apply(this)
+        setContentView(R.layout.activity_settings)
+
+        findViewById<ImageButton>(R.id.btnBack).setOnClickListener { finish() }
+
+        val settingsRepo = SettingsRepository(this)
+
+        // ---- Phase 7: thermal thresholds -----------------------------------
+        val txtWarn = findViewById<TextView>(R.id.txtThermalWarn)
+        val txtCrit = findViewById<TextView>(R.id.txtThermalCrit)
+        val seekWarn = findViewById<SeekBar>(R.id.seekThermalWarn)
+        val seekCrit = findViewById<SeekBar>(R.id.seekThermalCrit)
+        seekWarn.progress = tempToProgress(settingsRepo.thermalWarnC)
+        seekCrit.progress = tempToProgress(settingsRepo.thermalCritC)
+        txtWarn.text = "${settingsRepo.thermalWarnC}°C"
+        txtCrit.text = "${settingsRepo.thermalCritC}°C"
+
+        seekWarn.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                val warn = progressToTemp(progress)
+                // Warning must stay below the safe-stop point.
+                val crit = progressToTemp(seekCrit.progress)
+                val effective = warn.coerceAtMost(crit - 1)
+                if (fromUser && effective != warn) {
+                    sb?.progress = tempToProgress(effective)
+                }
+                settingsRepo.thermalWarnC = effective
+                txtWarn.text = "${effective}°C"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+        seekCrit.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                val crit = progressToTemp(progress)
+                val warn = progressToTemp(seekWarn.progress)
+                val effective = crit.coerceAtLeast(warn + 1)
+                if (fromUser && effective != crit) {
+                    sb?.progress = tempToProgress(effective)
+                }
+                settingsRepo.thermalCritC = effective
+                txtCrit.text = "${effective}°C"
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+
+        // ---- Phase 3: playlist experimental gate ---------------------------
+        val switchPlaylist = findViewById<SwitchCompat>(R.id.switchPlaylist)
+        switchPlaylist.isChecked = settingsRepo.playlistEnabled
+        switchPlaylist.setOnCheckedChangeListener { _, checked ->
+            settingsRepo.playlistEnabled = checked
+        }
+
+        // ---- Encoder preference (Stage 1) ----------------------------------
+        val spinnerEncoder = findViewById<Spinner>(R.id.spinnerEncoder)
+        spinnerEncoder.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            arrayOf(
+                "Auto (hardware if verified, else software)",
+                "Hardware (h264_mediacodec)",
+                "Software (libx264)"
+            )
+        )
+        spinnerEncoder.setSelection(
+            when (settingsRepo.encoderPref) {
+                EncoderPref.HARDWARE -> 1
+                EncoderPref.SOFTWARE -> 2
+                else -> 0
+            }
+        )
+        spinnerEncoder.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                settingsRepo.encoderPref = when (pos) {
+                    1 -> EncoderPref.HARDWARE
+                    2 -> EncoderPref.SOFTWARE
+                    else -> EncoderPref.AUTO
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // ---- Appearance: theme + accent ------------------------------------
+        val themes = ThemeStore.Theme.values()
+        val accents = ThemeStore.Accent.values()
+        val spinnerTheme = findViewById<Spinner>(R.id.spinnerThemeMode)
+        val spinnerAccent = findViewById<Spinner>(R.id.spinnerAccent)
+        spinnerTheme.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            themes.map { it.label }.toTypedArray()
+        )
+        spinnerAccent.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            accents.map { it.label }.toTypedArray()
+        )
+        spinnerTheme.setSelection(themes.indexOf(ThemeStore.savedTheme(this)))
+        spinnerAccent.setSelection(accents.indexOf(ThemeStore.accent(this)))
+        spinnerTheme.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val t = themes[pos]
+                if (t != ThemeStore.savedTheme(this@SettingsActivity)) {
+                    ThemeStore.saveTheme(this@SettingsActivity, t)
+                    recreate() // cosmetic only — the live stream is untouched
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        spinnerAccent.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val a = accents[pos]
+                if (a != ThemeStore.accent(this@SettingsActivity)) {
+                    ThemeStore.saveAccent(this@SettingsActivity, a)
+                    recreate()
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        val batteryStatus = findViewById<TextView>(R.id.txtBatteryStatus)
+        val btnBattery = findViewById<TextView>(R.id.btnBattery)
+        btnBattery.setOnClickListener { requestBatteryExemption() }
+
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        if (pm.isIgnoringBatteryOptimizations(packageName)) {
+            batteryStatus.text = "Battery optimization: EXEMPT ✓ (good for long streams)"
+            batteryStatus.setTextColor(ContextCompat.getColor(this, R.color.green))
+        } else {
+            batteryStatus.text = "Battery optimization: ACTIVE ⚠ — allow unrestricted battery usage for reliable background streaming."
+            batteryStatus.setTextColor(ContextCompat.getColor(this, R.color.amber))
+        }
+
+        val engineInfo = findViewById<TextView>(R.id.txtEngineInfo)
+        val report = FFmpegRuntime.verify(this)
+        val versionLine = "FFmpeg ${report.ffmpegVersion ?: "unavailable"}"
+        val testLine = if (report.ready) {
+            "Runtime test: PASSED ✓"
+        } else {
+            "Runtime test: FAILED — ${report.userMessage} (see Advanced Logs)"
+        }
+        engineInfo.text = versionLine +
+            "\n" + testLine +
+            "\nDevice ABI: " + report.deviceAbis.joinToString(", ") +
+            "\nPackaged ABIs: " +
+            (report.apkAbis.joinToString(", ").ifEmpty { "none found" }) +
+            "\n" + DeviceCaps.describe()
+
+        findViewById<TextView>(R.id.btnOpenLogs).setOnClickListener {
+            startActivity(Intent(this, LogsActivity::class.java))
+        }
+    }
+
+    private fun requestBatteryExemption() {
+        try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$packageName")
+                )
+            )
+        } catch (t: Throwable) {
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (t2: Throwable) {
+                Toast.makeText(
+                    this,
+                    "Please allow unrestricted battery usage for this app in system settings.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/SplashActivity.kt ==========
+package com.videolive.app
+
+import android.content.Intent
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import androidx.appcompat.app.AppCompatActivity
+
+/** White splash with the LIVE VIP logo, then straight into the dashboard. */
+class SplashActivity : AppCompatActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_splash)
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!isFinishing) {
+                startActivity(Intent(this, ProjectsActivity::class.java))
+                finish()
+            }
+        }, 1200)
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/data/DestinationsRepository.kt ==========
+package com.videolive.app.data
+
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * Up to three named RTMP/RTMPS destinations. Stream keys are stored ONLY in
+ * [SecurePrefs] (encrypted); this repository holds names/URLs/active flag.
+ *
+ * Simultaneous multi-destination publishing (simulcast) is NOT attempted on
+ * the phone: one encoder session per stream keeps the proven engine intact.
+ * The manager lets the user prepare several destinations, test each one, and
+ * pick which single destination the next stream uses.
+ */
+object DestinationsRepository {
+
+    private const val PREF = "vl_destinations"
+    const val MAX = 3
+
+    data class Destination(
+        val id: String,
+        val name: String,
+        val serverUrl: String,
+        val fullUrlMode: Boolean,
+        val fullUrl: String,
+        val enabled: Boolean
+    )
+
+    fun load(context: Context): List<Destination> {
+        val raw = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+            .getString("json", null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                Destination(
+                    id = o.getString("id"),
+                    name = o.optString("name", "Destination ${i + 1}"),
+                    serverUrl = o.optString("server", ""),
+                    fullUrlMode = o.optBoolean("fullUrlMode", false),
+                    fullUrl = o.optString("fullUrl", ""),
+                    enabled = o.optBoolean("enabled", true)
+                )
+            }
+        } catch (t: Throwable) {
+            emptyList()
+        }
+    }
+
+    fun save(context: Context, list: List<Destination>) {
+        val arr = JSONArray()
+        list.take(MAX).forEach { d ->
+            arr.put(
+                JSONObject()
+                    .put("id", d.id)
+                    .put("name", d.name)
+                    .put("server", d.serverUrl)
+                    .put("fullUrlMode", d.fullUrlMode)
+                    .put("fullUrl", d.fullUrl)
+                    .put("enabled", d.enabled)
+            )
+        }
+        context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+            .edit().putString("json", arr.toString()).apply()
+    }
+
+    fun activeId(context: Context): String? =
+        context.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString("active", null)
+
+    fun setActive(context: Context, id: String) {
+        context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+            .edit().putString("active", id).apply()
+    }
+
+    fun keyFor(context: Context, id: String): String =
+        SecurePrefs.getSecret(context, "dest_key_$id").orEmpty()
+
+    fun saveKey(context: Context, id: String, key: String) {
+        SecurePrefs.saveSecret(context, "dest_key_$id", key)
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/data/PlaylistRepository.kt ==========
+package com.videolive.app.data
+
+import android.content.Context
+import com.videolive.app.model.LoopMode
+import com.videolive.app.model.StopPolicy
+import com.videolive.app.model.StreamItem
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * Persists the current playlist (items + playback policy) so a session can be
+ * re-used across app restarts. Stored as plain JSON in private prefs — URIs
+ * and names only; nothing secret.
+ */
+object PlaylistRepository {
+
+    private const val PREF = "vl_playlist"
+
+    data class Playlist(
+        val items: List<StreamItem>,
+        val loopMode: LoopMode,
+        val sessionDurationHours: Int,
+        val stopPolicy: StopPolicy
+    )
+
+    fun save(context: Context, playlist: Playlist) {
+        val root = JSONObject()
+        val arr = JSONArray()
+        playlist.items.forEach { item ->
+            arr.put(
+                JSONObject()
+                    .put("uri", item.uri)
+                    .put("name", item.displayName)
+                    .put("size", item.sizeBytes)
+                    .put("duration", item.durationMs)
+                    .put("w", item.width)
+                    .put("h", item.height)
+                    .put("fps", item.fps)
+                    .put("hasAudio", item.hasAudio)
+                    .put("vCodec", item.videoCodec)
+                    .put("aCodec", item.audioCodec)
+            )
+        }
+        root.put("items", arr)
+        root.put("mode", playlist.loopMode.name)
+        root.put("hours", playlist.sessionDurationHours)
+        root.put("policy", playlist.stopPolicy.name)
+        context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+            .edit().putString("json", root.toString()).apply()
+    }
+
+    fun load(context: Context): Playlist? {
+        val raw = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+            .getString("json", null) ?: return null
+        return try {
+            val root = JSONObject(raw)
+            val arr = root.optJSONArray("items") ?: JSONArray()
+            val items = (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                StreamItem(
+                    uri = o.getString("uri"),
+                    displayName = o.getString("name"),
+                    sizeBytes = o.optLong("size", 0L),
+                    durationMs = o.optLong("duration", 0L),
+                    width = o.optInt("w", 0),
+                    height = o.optInt("h", 0),
+                    fps = o.optInt("fps", 0),
+                    hasAudio = o.optBoolean("hasAudio", true),
+                    videoCodec = o.optString("vCodec", ""),
+                    audioCodec = o.optString("aCodec", "")
+                )
+            }
+            Playlist(
+                items = items,
+                loopMode = runCatching {
+                    LoopMode.valueOf(root.optString("mode", "ONE"))
+                }.getOrDefault(LoopMode.ONE),
+                sessionDurationHours = root.optInt("hours", 0),
+                stopPolicy = runCatching {
+                    StopPolicy.valueOf(root.optString("policy", "CONTINUE_UNTIL_STOPPED"))
+                }.getOrDefault(StopPolicy.CONTINUE_UNTIL_STOPPED)
+            )
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    fun clear(context: Context) {
+        context.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().remove("json").apply()
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/data/ProjectStore.kt ==========
+package com.videolive.app.data
+
+import android.content.Context
+import com.videolive.app.stream.StreamService
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
+
+/**
+ * Persistent Stream Projects.
+ *
+ * A project is a named, durable snapshot of everything a live session needs:
+ * the full settings state (video, destination, quality, fps, bitrate, volumes,
+ * mic, framing, encoder), the playlist (if any) and a reference to an
+ * encrypted per-project stream key (the key itself lives ONLY in SecurePrefs,
+ * never in this file, never in logs).
+ *
+ * Storage: private JSON file `projects.json`. This matches the app's existing
+ * file/prefs repository architecture — no new database dependency, nothing the
+ * streaming engine doesn't already trust. Projects survive app restarts and
+ * are independent of any Activity state.
+ */
+object ProjectStore {
+
+    private const val FILE = "projects.json"
+    private const val SETTINGS_PREF = "vl_settings"
+    private const val PLAYLIST_PREF = "vl_playlist"
+
+    data class Project(
+        val id: String,
+        val name: String,
+        val createdAt: Long,
+        val modifiedAt: Long,
+        val lastStatus: String,
+        val hasKey: Boolean,
+        val videoName: String
+    )
+
+    // ---- file io -----------------------------------------------------------
+
+    private fun file(ctx: Context) = java.io.File(ctx.filesDir, FILE)
+
+    private fun readRoot(ctx: Context): JSONObject = try {
+        val raw = file(ctx).readText()
+        JSONObject(raw)
+    } catch (t: Throwable) {
+        JSONObject().put("projects", JSONArray())
+    }
+
+    private fun writeRoot(ctx: Context, root: JSONObject) {
+        runCatching { file(ctx).writeText(root.toString()) }
+    }
+
+    private fun findProject(root: JSONObject, id: String): JSONObject? {
+        val arr = root.optJSONArray("projects") ?: return null
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            if (o.optString("id") == id) return o
+        }
+        return null
+    }
+
+    // ---- public api ----------------------------------------------------------
+
+    fun list(ctx: Context): List<Project> {
+        val root = readRoot(ctx)
+        val arr = root.optJSONArray("projects") ?: JSONArray()
+        val out = mutableListOf<Project>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val id = o.optString("id")
+            out += Project(
+                id = id,
+                name = o.optString("name", "Stream"),
+                createdAt = o.optLong("created", 0L),
+                modifiedAt = o.optLong("modified", 0L),
+                lastStatus = o.optString("lastStatus", ""),
+                hasKey = SecurePrefs.getSecret(ctx, keyId(id)) != null,
+                videoName = o.optJSONObject("settings")?.optString("video_uri", "")
+                    ?.let { videoLabel(ctx, o, it) } ?: "No video selected"
+            )
+        }
+        return out
+    }
+
+    private fun videoLabel(ctx: Context, project: JSONObject, videoUri: String): String {
+        if (videoUri.isEmpty()) {
+            val playlistJson = project.optString("playlist", "")
+            if (playlistJson.isNotEmpty()) {
+                val count = try {
+                    JSONObject(playlistJson).optJSONArray("items")?.length() ?: 0
+                } catch (t: Throwable) { 0 }
+                if (count >= 2) return "Playlist ($count videos)"
+            }
+            return "No video selected"
+        }
+        return try {
+            val uri = android.net.Uri.parse(videoUri)
+            uri.lastPathSegment?.substringAfterLast('/') ?: videoUri
+        } catch (t: Throwable) { videoUri }
+    }
+
+    /** Creates a fresh project (defaults; the user configures it on open). */
+    fun create(ctx: Context, name: String): Project {
+        val id = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val o = JSONObject()
+            .put("id", id)
+            .put("name", name.ifBlank { "New Stream" })
+            .put("created", now)
+            .put("modified", now)
+            .put("lastStatus", "")
+            .put("settings", JSONObject())
+        val root = readRoot(ctx)
+        root.optJSONArray("projects")?.put(o)
+            ?: root.put("projects", JSONArray().put(o))
+        writeRoot(ctx, root)
+        return Project(id, o.getString("name"), now, now, "", false, "No video selected")
+    }
+
+    /** Snapshots the CURRENT global state (settings + playlist + key) into
+     * the project. Called when a project session starts, so the exact working
+     * configuration is what persists. Never touches the stream itself. */
+    fun snapshotCurrentInto(ctx: Context, id: String, status: String, streamKey: String?) {
+        val root = readRoot(ctx)
+        val o = findProject(root, id) ?: return
+        val settings = JSONObject()
+        ctx.getSharedPreferences(SETTINGS_PREF, Context.MODE_PRIVATE).all.forEach { (k, v) ->
+            if (v != null) settings.put(k, v)
+        }
+        o.put("settings", settings)
+        val playlist = ctx.getSharedPreferences(PLAYLIST_PREF, Context.MODE_PRIVATE)
+            .getString("json", null)
+        o.put("playlist", playlist ?: "")
+        o.put("lastStatus", status)
+        o.put("modified", System.currentTimeMillis())
+        writeRoot(ctx, root)
+        if (!streamKey.isNullOrBlank()) {
+            SecurePrefs.saveSecret(ctx, keyId(id), streamKey)
+        }
+    }
+
+    /** Loads a project's snapshot into the global app state so MainActivity
+     * renders and streams exactly what the project saved. */
+    fun applyToGlobal(ctx: Context, id: String): Project? {
+        val root = readRoot(ctx)
+        val o = findProject(root, id) ?: return null
+
+        // Settings: full replace so nothing from another project leaks in.
+        val edit = ctx.getSharedPreferences(SETTINGS_PREF, Context.MODE_PRIVATE).edit()
+        edit.clear()
+        val settings = o.optJSONObject("settings") ?: JSONObject()
+        settings.keys().forEach { k ->
+            when (val v = settings.opt(k)) {
+                is String -> edit.putString(k, v)
+                is Int -> edit.putInt(k, v)
+                is Long -> edit.putLong(k, v)
+                is Boolean -> edit.putBoolean(k, v)
+                is Double -> edit.putFloat(k, v.toFloat())
+                null -> {}
+                else -> edit.putString(k, v.toString())
+            }
+        }
+        edit.apply()
+
+        // Playlist: project's own list (or none).
+        ctx.getSharedPreferences(PLAYLIST_PREF, Context.MODE_PRIVATE)
+            .edit().putString("json", o.optString("playlist", "").ifEmpty { "" }).apply()
+        if (o.optString("playlist", "").isEmpty()) {
+            ctx.getSharedPreferences(PLAYLIST_PREF, Context.MODE_PRIVATE)
+                .edit().remove("json").apply()
+        }
+
+        // Stream key: per-project encrypted secret becomes the active key.
+        // Projects without a saved key clear the field rather than showing a
+        // previous project's secret.
+        val key = SecurePrefs.getSecret(ctx, keyId(id)).orEmpty()
+        SecurePrefs.saveStreamKey(ctx, key)
+
+        return Project(
+            id = id,
+            name = o.optString("name", "Stream"),
+            createdAt = o.optLong("created", 0L),
+            modifiedAt = o.optLong("modified", 0L),
+            lastStatus = o.optString("lastStatus", ""),
+            hasKey = key.isNotEmpty(),
+            videoName = videoLabel(ctx, o, settings.optString("video_uri", ""))
+        )
+    }
+
+    fun rename(ctx: Context, id: String, newName: String) {
+        val root = readRoot(ctx)
+        val o = findProject(root, id) ?: return
+        o.put("name", newName.trim().ifBlank { o.optString("name", "Stream") })
+        o.put("modified", System.currentTimeMillis())
+        writeRoot(ctx, root)
+    }
+
+    fun duplicate(ctx: Context, id: String): Project? {
+        val root = readRoot(ctx)
+        val src = findProject(root, id) ?: return null
+        val newId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val copy = JSONObject(src.toString())
+            .put("id", newId)
+            .put("name", src.optString("name", "Stream") + " (copy)")
+            .put("created", now)
+            .put("modified", now)
+            .put("lastStatus", "")
+        root.optJSONArray("projects")?.put(copy)
+        writeRoot(ctx, root)
+        // Copy the encrypted key for the duplicate (encrypted at rest, as always).
+        SecurePrefs.getSecret(ctx, keyId(id))?.let { SecurePrefs.saveSecret(ctx, keyId(newId), it) }
+        return list(ctx).firstOrNull { it.id == newId }
+    }
+
+    fun delete(ctx: Context, id: String) {
+        val root = readRoot(ctx)
+        val arr = root.optJSONArray("projects") ?: return
+        val kept = JSONArray()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            if (o.optString("id") != id) kept.put(o)
+        }
+        root.put("projects", kept)
+        writeRoot(ctx, root)
+        runCatching {
+            ctx.getSharedPreferences("vl_secure_prefs", Context.MODE_PRIVATE)
+                .edit().remove(keyId(id)).apply()
+        }
+    }
+
+    fun setStatus(ctx: Context, id: String, status: String) {
+        val root = readRoot(ctx)
+        val o = findProject(root, id) ?: return
+        o.put("lastStatus", status)
+        o.put("modified", System.currentTimeMillis())
+        writeRoot(ctx, root)
+    }
+
+    /** Status string for a project, aware of the live session. */
+    fun displayStatus(ctx: Context, p: Project, activeProjectId: String?): String = when {
+        StreamService.isStreaming && p.id == activeProjectId -> "LIVE now"
+        p.lastStatus.isEmpty() -> "Never streamed"
+        else -> "Last session: ${p.lastStatus}"
+    }
+
+    private fun keyId(id: String) = "proj_key_$id"
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/data/SecurePrefs.kt ==========
+package com.videolive.app.data
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+
+/**
+ * Stream key storage. Backed by Android Keystore via EncryptedSharedPreferences.
+ * If a device cannot provide a Keystore-backed key (rare), we fall back to
+ * normal private SharedPreferences rather than breaking the app — the key still
+ * never leaves the device and is never logged.
+ */
+object SecurePrefs {
+
+    private const val FILE = "vl_secure_prefs"
+    private const val PLAIN_FILE = "vl_secure_prefs_plain"
+    private const val KEY_STREAM_KEY = "stream_key"
+
+    @Volatile private var cached: SharedPreferences? = null
+
+    private fun prefs(context: Context): SharedPreferences {
+        cached?.let { return it }
+        synchronized(this) {
+            cached?.let { return it }
+            val ctx = context.applicationContext
+            val p = try {
+                val masterKey = MasterKey.Builder(ctx)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                EncryptedSharedPreferences.create(
+                    ctx,
+                    FILE,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+            } catch (t: Throwable) {
+                try {
+                    ctx.deleteSharedPreferences(FILE)
+                    val masterKey = MasterKey.Builder(ctx)
+                        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                        .build()
+                    EncryptedSharedPreferences.create(
+                        ctx,
+                        FILE,
+                        masterKey,
+                        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                    )
+                } catch (t2: Throwable) {
+                    ctx.getSharedPreferences(PLAIN_FILE, Context.MODE_PRIVATE)
+                }
+            }
+            cached = p
+            return p
+        }
+    }
+
+    fun saveStreamKey(context: Context, key: String) {
+        prefs(context).edit().putString(KEY_STREAM_KEY, key).apply()
+    }
+
+    fun getStreamKey(context: Context): String? =
+        try {
+            prefs(context).getString(KEY_STREAM_KEY, null)
+        } catch (t: Throwable) {
+            null
+        }
+
+    /** Generic encrypted secret (used for per-destination stream keys). */
+    fun saveSecret(context: Context, id: String, value: String) {
+        prefs(context).edit().putString(id, value).apply()
+    }
+
+    fun getSecret(context: Context, id: String): String? =
+        try {
+            prefs(context).getString(id, null)
+        } catch (t: Throwable) {
+            null
+        }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/data/SettingsRepository.kt ==========
+package com.videolive.app.data
+
+import android.content.Context
+import com.videolive.app.model.BitrateMode
+import com.videolive.app.model.EncoderPref
+import com.videolive.app.model.FrameMode
+import com.videolive.app.model.LoopMode
+import com.videolive.app.model.Orientation
+import com.videolive.app.model.Quality
+
+/**
+ * Non-secret UI settings, restored every time the app opens.
+ */
+class SettingsRepository(context: Context) {
+
+    private val prefs = context.applicationContext.getSharedPreferences("vl_settings", Context.MODE_PRIVATE)
+
+    var videoUri: String?
+        get() = prefs.getString("video_uri", null)
+        set(value) = prefs.edit().putString("video_uri", value).apply()
+
+    var serverUrl: String
+        get() = prefs.getString("server_url", "rtmps://a.rtmp.youtube.com/live2") ?: "rtmps://a.rtmp.youtube.com/live2"
+        set(value) = prefs.edit().putString("server_url", value).apply()
+
+    var fullUrlMode: Boolean
+        get() = prefs.getBoolean("full_url_mode", false)
+        set(value) = prefs.edit().putBoolean("full_url_mode", value).apply()
+
+    var fullUrl: String
+        get() = prefs.getString("full_url", "") ?: ""
+        set(value) = prefs.edit().putString("full_url", value).apply()
+
+    var orientation: Orientation
+        get() = if (prefs.getString("orientation", "H") == "V") Orientation.VERTICAL else Orientation.HORIZONTAL
+        set(value) = prefs.edit().putString("orientation", if (value == Orientation.VERTICAL) "V" else "H").apply()
+
+    var quality: Quality
+        get() = Quality.fromLabel(prefs.getString("quality", Quality.Q720.label) ?: Quality.Q720.label)
+        set(value) = prefs.edit().putString("quality", value.label).apply()
+
+    var fps: Int
+        get() = prefs.getInt("fps", 30)
+        set(value) = prefs.edit().putInt("fps", value).apply()
+
+    var bitrateMode: BitrateMode
+        get() = if (prefs.getString("bitrate_mode", "AUTO") == "MANUAL") BitrateMode.MANUAL else BitrateMode.AUTO
+        set(value) = prefs.edit().putString("bitrate_mode", value.name).apply()
+
+    var manualBitrateKbps: Int
+        get() = prefs.getInt("manual_bitrate", 4500)
+        set(value) = prefs.edit().putInt("manual_bitrate", value).apply()
+
+    var videoVolumePct: Int
+        get() = prefs.getInt("volume", 100)
+        set(value) = prefs.edit().putInt("volume", value).apply()
+
+    var micOn: Boolean
+        get() = prefs.getBoolean("mic_on", false)
+        set(value) = prefs.edit().putBoolean("mic_on", value).apply()
+
+    var loopMode: LoopMode
+        get() = LoopMode.ONE
+        set(value) = prefs.edit().putString("loop_mode", value.name).apply()
+
+    // ---- Phase 4: framing (applied to the encoder output at stream start) ----
+    var frameMode: FrameMode
+        get() = if (prefs.getString("frame_mode", "FIT") == "FILL") FrameMode.FILL else FrameMode.FIT
+        set(value) = prefs.edit().putString("frame_mode", value.name).apply()
+
+    var zoomPct: Int
+        get() = prefs.getInt("zoom_pct", 100)
+        set(value) = prefs.edit().putInt("zoom_pct", value).apply()
+
+    var panXPct: Int
+        get() = prefs.getInt("pan_x_pct", 0)
+        set(value) = prefs.edit().putInt("pan_x_pct", value).apply()
+
+    var panYPct: Int
+        get() = prefs.getInt("pan_y_pct", 0)
+        set(value) = prefs.edit().putInt("pan_y_pct", value).apply()
+
+    // ---- Phase 5: independent microphone gain ----
+    var micVolumePct: Int
+        get() = prefs.getInt("mic_volume", 100)
+        set(value) = prefs.edit().putInt("mic_volume", value).apply()
+
+    // ---- Phase 3: playlist experimental gate ----
+    var playlistEnabled: Boolean
+        get() = prefs.getBoolean("playlist_enabled", true)
+        set(value) = prefs.edit().putBoolean("playlist_enabled", value).apply()
+
+    // ---- Phase 1 (final): encoder preference ----
+    var encoderPref: EncoderPref
+        get() = runCatching {
+            EncoderPref.valueOf(prefs.getString("encoder_pref", "AUTO") ?: "AUTO")
+        }.getOrDefault(EncoderPref.AUTO)
+        set(value) = prefs.edit().putString("encoder_pref", value.name).apply()
+
+    // ---- Phase 7: thermal guard thresholds (°C, battery sensor) ----
+    var thermalWarnC: Int
+        get() = prefs.getInt("thermal_warn_c", 41)
+        set(value) = prefs.edit().putInt("thermal_warn_c", value).apply()
+
+    var thermalCritC: Int
+        get() = prefs.getInt("thermal_crit_c", 45)
+        set(value) = prefs.edit().putInt("thermal_crit_c", value).apply()
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/data/ThemeStore.kt ==========
+package com.videolive.app.data
+
+import android.content.Context
+import android.content.res.Configuration
+import androidx.annotation.StyleRes
+import com.videolive.app.R
+
+/**
+ * Premium UI theme + accent selection, persisted across restarts.
+ * Theme changes are purely cosmetic — they never touch the stream engine.
+ */
+object ThemeStore {
+
+    private const val PREF = "vl_theme"
+
+    enum class Theme(val key: String, val label: String, @StyleRes val resId: Int) {
+        SYSTEM("system", "System default", R.style.Theme_VideoLive_Graphite),
+        GRAPHITE("graphite", "Dark Graphite", R.style.Theme_VideoLive_Graphite),
+        BLACK("black", "Pure Black", R.style.Theme_VideoLive_Black),
+        WHITE("white", "Clean White / Light", R.style.Theme_VideoLive_White),
+        MIDNIGHT("midnight", "Midnight Blue", R.style.Theme_VideoLive_Midnight),
+        EMERALD("emerald", "Emerald", R.style.Theme_VideoLive_Emerald),
+        VIOLET("violet", "Violet", R.style.Theme_VideoLive_Violet),
+        CYAN("cyan", "Cyan", R.style.Theme_VideoLive_Cyan);
+
+        companion object {
+            fun fromKey(key: String?): Theme =
+                values().firstOrNull { it.key == key } ?: GRAPHITE
+        }
+    }
+
+    enum class Accent(
+        val key: String,
+        val label: String,
+        @StyleRes val overlayRes: Int
+    ) {
+        PURPLE("purple", "Purple", R.style.Accent_Purple),
+        CYAN("cyan", "Cyan", R.style.Accent_Cyan),
+        BLUE("blue", "Blue", R.style.Accent_Blue),
+        TEAL("teal", "Teal", R.style.Accent_Teal),
+        GREEN("green", "Green", R.style.Accent_Green),
+        AMBER("amber", "Amber", R.style.Accent_Amber);
+
+        companion object {
+            fun fromKey(key: String?): Accent =
+                values().firstOrNull { it.key == key } ?: PURPLE
+        }
+    }
+
+    fun savedTheme(context: Context): Theme =
+        Theme.fromKey(
+            context.applicationContext
+                .getSharedPreferences(PREF, Context.MODE_PRIVATE)
+                .getString("theme", Theme.GRAPHITE.key)
+        )
+
+    /** Resolves SYSTEM to dark/light using the device configuration. */
+    fun current(context: Context): Theme {
+        val t = savedTheme(context)
+        if (t != Theme.SYSTEM) return t
+        val dark = (context.resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        return if (dark) Theme.GRAPHITE else Theme.WHITE
+    }
+
+    fun accent(context: Context): Accent =
+        Accent.fromKey(
+            context.applicationContext
+                .getSharedPreferences(PREF, Context.MODE_PRIVATE)
+                .getString("accent", Accent.PURPLE.key)
+        )
+
+    fun saveTheme(context: Context, theme: Theme) {
+        context.applicationContext
+            .getSharedPreferences(PREF, Context.MODE_PRIVATE)
+            .edit().putString("theme", theme.key).apply()
+    }
+
+    fun saveAccent(context: Context, accent: Accent) {
+        context.applicationContext
+            .getSharedPreferences(PREF, Context.MODE_PRIVATE)
+            .edit().putString("accent", accent.key).apply()
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/data/VideoRepository.kt ==========
+package com.videolive.app.data
+
+import android.net.Uri
+import com.videolive.app.media.LoadedVideo
+
+/**
+ * Process-wide holder for the currently loaded video. The streaming service and
+ * the UI share it so the file is probed only once and never copied twice.
+ */
+object VideoRepository {
+
+    @Volatile
+    var current: LoadedVideo? = null
+
+    /** The content Uri that [current] was prepared from (single-copy guard). */
+    @Volatile
+    var currentUri: Uri? = null
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/ffmpeg/ErrorClassifier.kt ==========
+package com.videolive.app.ffmpeg
+
+enum class ErrorKind { AUTH, NETWORK, INPUT, ENGINE }
+
+data class ClassifiedError(val kind: ErrorKind, val userMessage: String)
+
+/**
+ * Turns raw FFmpeg failure output into human readable, actionable messages.
+ * Raw logs are never shown to normal users (see the Advanced Logs screen).
+ */
+object ErrorClassifier {
+
+    fun classify(logTail: String): ClassifiedError {
+        val log = logTail.lowercase()
+
+        if (containsAny(log,
+                "authentication failed",
+                "not authorized",
+                "access denied",
+                "403 forbidden",
+                "invalid stream key",
+                "handshake failed"
+            )
+        ) {
+            return ClassifiedError(ErrorKind.AUTH, "YouTube rejected the stream. Check your Stream Key.")
+        }
+
+        if (containsAny(log,
+                "invalid data found when processing input",
+                "does not contain any stream",
+                "no such file",
+                "error opening input",
+                "moov atom not found",
+                "operation not permitted",
+                "unrecognized option"
+            )
+        ) {
+            return ClassifiedError(ErrorKind.INPUT, "Unable to read this video or invalid settings.")
+        }
+
+        if (containsAny(log,
+                "connection reset",
+                "connection refused",
+                "connection timed out",
+                "broken pipe",
+                "network is unreachable",
+                "host not found",
+                "error writing trailer",
+                "connection ended",
+                "operation timed out",
+                "input/output error",
+                "resource temporarily unavailable",
+                "tls",
+                "ssl"
+            )
+        ) {
+            return ClassifiedError(ErrorKind.NETWORK, "Internet connection lost or server closed the connection.")
+        }
+
+        return ClassifiedError(ErrorKind.ENGINE, "Streaming engine stopped unexpectedly.")
+    }
+
+    private fun containsAny(haystack: String, vararg needles: String): Boolean =
+        needles.any { haystack.contains(it) }
+}
+
+========== END FILE ==========
+

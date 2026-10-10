@@ -1,0 +1,666 @@
+================================================================
+LIVE VIP — StreamService.kt PART 1 of 2 (LINES 1-660 of 1302)
+Path: app/src/main/java/com/videolive/app/stream/StreamService.kt
+Commit: 4ecde388c36686a5243e676c45be702f88c086a0 — UNMODIFIED original code
+================================================================
+
+package com.videolive.app.stream
+
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.net.Uri
+import android.os.BatteryManager
+import android.os.Build
+import android.os.IBinder
+import android.os.PowerManager
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import com.arthenica.ffmpegkit.FFmpegKitConfig
+import com.videolive.app.MainActivity
+import com.videolive.app.R
+import com.videolive.app.data.SecurePrefs
+import com.videolive.app.data.VideoRepository
+import com.videolive.app.ffmpeg.ErrorKind
+import com.videolive.app.ffmpeg.FFmpegCommandBuilder
+import com.videolive.app.ffmpeg.FFmpegManager
+import com.videolive.app.ffmpeg.FFmpegRuntime
+import com.videolive.app.ffmpeg.LogStore
+import com.videolive.app.ffmpeg.RunResult
+import com.videolive.app.data.SettingsRepository
+import com.videolive.app.media.LoadedVideo
+import com.videolive.app.media.VideoLoader
+import com.videolive.app.model.LoopMode
+import com.videolive.app.model.StopPolicy
+import com.videolive.app.model.StreamConfig
+import com.videolive.app.util.Net
+import java.io.File
+import java.util.Locale
+import kotlin.coroutines.coroutineContext
+import kotlin.math.min
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Foreground service that owns the entire streaming pipeline.
+ *
+ * Stability design:
+ *  - ONE FFmpeg session loops the video with -stream_loop -1; the RTMP output is
+ *    opened once and is never closed at a loop boundary.
+ *  - Reconnects happen ONLY on real network/RTMP failures or watchdog stalls,
+ *    with exponential backoff and a retry budget.
+ *  - A partial WakeLock keeps the CPU encode running while the screen is locked.
+ */
+class StreamService : Service() {
+
+    companion object {
+        const val ACTION_START = "com.videolive.app.action.START_STREAM"
+        const val ACTION_STOP = "com.videolive.app.action.STOP_STREAM"
+        const val EXTRA_CONFIG = "stream_config"
+        const val EXTRA_PROJECT_ID = "project_id"
+        const val CHANNEL_ID = "vl_live_channel"
+        private const val NOTIFICATION_ID = 1001
+        private const val MAX_ATTEMPTS = 5
+        private const val WATCHDOG_STALL_MS = 30_000L
+        private const val CONNECT_TIMEOUT_MS = 15_000L
+
+        // Markers in FFmpeg output that mean the RTMP/network layer failed.
+        private val RTMP_FAILURE_MARKERS = listOf(
+            "failed to connect", "connection refused", "connection reset",
+            "connection timed out", "operation timed out", "broken pipe",
+            "network is unreachable", "host not found", "could not resolve",
+            "handshake failed", "i/o error", "input/output error",
+            "server error", "not authorized", "access denied", "403",
+            "tls error", "ssl error", "connection ended", "error writing"
+        )
+
+        val uiState = MutableStateFlow(StreamUiState())
+
+        @Volatile
+        var isStreaming = false
+            private set
+
+        /** Last config used, so the Live screen can offer a Retry on ERROR. */
+        @Volatile
+        private var lastConfig: StreamConfig? = null
+        private var lastProjectId: String? = null
+
+        fun start(context: Context, config: StreamConfig, projectId: String? = lastProjectId) {
+            lastProjectId = projectId
+            val intent = Intent(context, StreamService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_CONFIG, config)
+                .putExtra(EXTRA_PROJECT_ID, projectId)
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        /** Restarts the last attempted stream (used by the Retry action). */
+        fun retry(context: Context): Boolean {
+            val config = lastConfig ?: return false
+            // A retry is a NEW session — give it its own log session id.
+            LogStore.startSession()
+            start(context, config)
+            return true
+        }
+
+        fun stop(context: Context) {
+            context.startService(Intent(context, StreamService::class.java).setAction(ACTION_STOP))
+        }
+
+        /** Skips the current reconnect backoff wait and retries immediately. */
+        fun requestRetryNow() {
+            LogStore.event("Retry Now requested by user")
+            retryNowFlag = true
+        }
+
+        @Volatile
+        private var retryNowFlag = false
+
+        internal fun consumeRetryNow(): Boolean {
+            val v = retryNowFlag
+            retryNowFlag = false
+            return v
+        }
+
+        internal fun retryNowPending(): Boolean = retryNowFlag
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val ffmpeg = FFmpegManager()
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var streamJob: Job? = null
+    private var tickerJob: Job? = null
+
+    @Volatile private var stopRequested = false
+    @Volatile private var retryNowRequested = false
+    private var startedAt = 0L
+    @Volatile private var lastProgressAt = System.currentTimeMillis()
+
+    // Per-FFmpeg-session evidence flags.
+    @Volatile private var everConnected = false
+    @Volatile private var connectTimedOut = false
+    @Volatile private var liveNotified = false
+
+    // Diagnostics: measured output cadence (frame delta over time delta).
+    private var prevStatFrames = 0L
+    private var prevStatTimeMs = 0L
+    @Volatile private var measuredFps = 0f
+    @Volatile private var softStallWarned = false
+    private var overloadStreak = 0
+    private var overloadWarned = false
+
+    // Encoder selection (Stage 1): hardware when available+verified, with an
+    // automatic software fallback. encoderInUse is parsed from real FFmpeg
+    // output, never assumed.
+    @Volatile private var encoderInUse = ""
+
+    /** Stream project this session belongs to (null = legacy direct start). */
+    private var projectId: String? = null
+    @Volatile private var forceSoftware = false
+    private var attemptUsedHw = false
+
+    // Transport health: output bytes must grow while frames are encoded.
+    // Frames advancing with frozen byte counter = RTMPS writes blocked.
+    private var prevBytes = -1L
+
+    // Long-duration latency drift: wall-clock elapsed minus encoded out_time.
+    // If this grows, encode/transport runs slightly under real time — the
+    // classic cause of "fine at first, laggy after ~1 hour" streams.
+    private var attemptWallStartMs = 0L
+    private var driftWarned = false
+    private var driftCritical = false
+    private var prevBytesFrames = 0L
+    private var transportStallStreak = 0
+
+    /** Service-side mirror of the UI state (terminal notification text etc). */
+    @Volatile private var state = StreamUiState()
+
+    // Playlist session bookkeeping (Phase 3).
+    private var playlistMode = false
+    private var playlistDurations = LongArray(0)
+    private var playlistNames = emptyArray<String>()
+    private var totalPlaylistMs = 0L
+    @Volatile private var durationReached = false
+
+    // Thermal guard (Phase 7).
+    private lateinit var settingsRepo: SettingsRepository
+    @Volatile private var deviceTempC = 0.0
+    private var thermalWarnShown = false
+    @Volatile private var thermalCritFired = false
+    private var batteryReceiver: BroadcastReceiver? = null
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        createChannel()
+        settingsRepo = SettingsRepository(this)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_START -> {
+                if (isStreaming) {
+                    return START_NOT_STICKY
+                }
+                val config = extractConfig(intent)
+                if (config == null) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                lastConfig = config
+                projectId = intent.getStringExtra(EXTRA_PROJECT_ID) ?: lastProjectId
+                stopRequested = false
+                liveNotified = false
+                playlistMode = false
+                totalPlaylistMs = 0L
+                durationReached = false
+                thermalWarnShown = false
+                thermalCritFired = false
+                deviceTempC = 0.0
+                encoderInUse = ""
+                forceSoftware = false
+                startedAt = System.currentTimeMillis()
+                isStreaming = true
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    buildNotification(config.videoName),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+                acquireWakeLock()
+                startThermalMonitor()
+                streamJob?.cancel()
+                streamJob = scope.launch { runStream(config) }
+            }
+            ACTION_STOP -> requestStop()
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun extractConfig(intent: Intent): StreamConfig? = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getSerializableExtra(EXTRA_CONFIG, StreamConfig::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getSerializableExtra(EXTRA_CONFIG) as? StreamConfig
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
+    private fun requestStop() {
+        if (!isStreaming && streamJob?.isActive != true) {
+            stopSelf()
+            return
+        }
+        stopRequested = true
+        post { it.copy(phase = Phase.STOPPING, statusText = "Stopping...") }
+        LogStore.event("Stop requested by user")
+        MicMixer.stop()
+        ffmpeg.cancelCurrent()
+    }
+
+    private suspend fun runStream(config: StreamConfig) {
+        var pipePath: String? = null
+        // Defensive: a session id must exist so every event of this run is
+        // traceable under one tag (normally started by the START LIVE tap).
+        if (!LogStore.hasSession()) LogStore.startSession()
+        LogStore.event("START LIVE requested")
+        post {
+            StreamUiState(
+                phase = Phase.PREPARING,
+                statusText = "Preparing...",
+                videoName = config.videoName,
+                outWidth = config.outputSize().first,
+                outHeight = config.outputSize().second,
+                fps = config.fps,
+                configuredBitrateKbps = config.targetBitrateKbps(),
+                hasVideoAudio = config.hasAudio,
+                volumePct = config.videoVolumePct
+            )
+        }
+        startTicker()
+        try {
+            val key = SecurePrefs.getStreamKey(this).orEmpty()
+            if (key.isBlank() && !config.fullUrlMode) {
+                LogStore.event("Startup aborted: stream key is empty")
+                failNow("Please enter your YouTube Stream Key.")
+                return
+            }
+            val destination = FFmpegCommandBuilder.buildDestinationUrl(
+                config.fullUrlMode, config.serverUrl, config.fullUrl, key
+            )
+            if (destination == null) {
+                LogStore.event("Startup aborted: RTMP destination URL is malformed")
+                failNow("Please enter a valid RTMP/RTMPS server URL and Stream Key (no spaces).")
+                return
+            }
+            // Sanitize masks the path (stream key) of rtmp(s) URLs.
+            LogStore.event("RTMP destination validated: $destination")
+
+            // One-time, background capability probe: is a hardware H.264
+            // encoder even packaged? (evidence for the hw-encoder question)
+            withContext(Dispatchers.IO) { FFmpegRuntime.logEncoderCapabilities() }
+            val hwPresent = withContext(Dispatchers.IO) { FFmpegRuntime.hasHardwareH264() }
+            LogStore.event(
+                "Encoder preference: ${config.encoderPref} | hardware H.264 present: $hwPresent"
+            )
+
+            // loadOnce / prepareBatch are single-flight: even if something else
+            // is preparing right now, this waits and reuses the result — a
+            // second cache copy can never start.
+            val loadedList: List<LoadedVideo> = if (config.isPlaylist) {
+                LogStore.event(
+                    "Preparing playlist: ${config.items.size} items " +
+                        "(cache reuse enabled, mode=${config.loopMode})"
+                )
+                try {
+                    VideoLoader.prepareBatch(this@StreamService, config.items)
+                } catch (e: com.videolive.app.media.VideoInputException) {
+                    LogStore.event("Startup aborted: playlist preparation failed")
+                    failNow(e.message ?: "Unable to read one of the playlist videos.")
+                    return
+                } catch (t: Throwable) {
+                    LogStore.event("Startup aborted: playlist preparation crashed (${t.javaClass.simpleName})")
+                    failNow("Unable to read one of the playlist videos.")
+                    return
+                }
+            } else {
+                listOf(
+                    VideoRepository.current?.takeIf { it.source.displayName == config.videoName }
+                        ?: try {
+                            VideoLoader.loadOnce(this@StreamService, Uri.parse(config.videoUri))
+                        } catch (e: com.videolive.app.media.VideoInputException) {
+                            LogStore.event("Startup aborted: input preparation failed")
+                            failNow(e.message ?: "Unable to read this video.")
+                            return
+                        } catch (t: Throwable) {
+                            LogStore.event("Startup aborted: input preparation crashed (${t.javaClass.simpleName})")
+                            failNow("Unable to read this video.")
+                            return
+                        }
+                )
+            }
+
+            playlistMode = config.isPlaylist && loadedList.size > 1
+            if (playlistMode) {
+                // Seamless concat requires identical codec params across items.
+                val first = loadedList.first().info
+                val uniform = loadedList.all {
+                    it.info.videoCodec == first.videoCodec &&
+                        it.info.width == first.width &&
+                        it.info.height == first.height &&
+                        it.info.hasAudio == first.hasAudio &&
+                        (!first.hasAudio || it.info.audioCodec == first.audioCodec)
+                }
+                if (!uniform) {
+                    failNow(
+                        "Playlist videos must share the same codec, resolution and audio " +
+                            "layout for seamless playback. Re-encode mismatched items to match."
+                    )
+                    return
+                }
+                loadedList.forEachIndexed { i, lv ->
+                    LogStore.event(
+                        "Playlist item ${i + 1}: ${lv.info.width}x${lv.info.height}, " +
+                            "${lv.info.fps} fps, ${lv.info.durationMs / 1000}s, " +
+                            "audio=${if (lv.info.hasAudio) "yes" else "no"} " +
+                            (if (lv.source.isTemporaryCopy) "(cache bridge copy)" else "(direct read)")
+                    )
+                }
+            } else {
+                VideoRepository.current = loadedList.first()
+            }
+
+            val loaded = loadedList.first()
+            val info = loaded.info
+            LogStore.event(
+                "Input prepared: " +
+                    (if (loaded.source.isTemporaryCopy) "cache bridge copy" else "direct read") +
+                    " | ${info.width}x${info.height}, ${info.fps} fps, " +
+                    "duration ${info.durationMs / 1000}s, audio=${if (info.hasAudio) "yes" else "no"}"
+            )
+            LogStore.event(
+                "Output plan: H.264 + AAC -> FLV -> RTMP, " +
+                    "${config.outputSize().first}x${config.outputSize().second} @ ${config.fps} fps, " +
+                    "${config.targetBitrateKbps()} kbps, " +
+                    (if (playlistMode) "playlist=${loadedList.size} items (${config.loopMode})"
+                    else "loop=in-engine (-stream_loop -1)")
+            )
+
+            // Playlist playback order: shuffle once per session; reconnects
+            // always resume the same order.
+            val playOrder: List<Int> =
+                if (playlistMode && config.loopMode == LoopMode.SHUFFLE) loadedList.indices.shuffled()
+                else loadedList.indices.toList()
+            if (playlistMode) {
+                playlistDurations = LongArray(playOrder.size) { loadedList[playOrder[it]].info.durationMs }
+                playlistNames = playOrder.map { loadedList[it].source.displayName }.toTypedArray()
+                totalPlaylistMs = playlistDurations.sum()
+                LogStore.event(
+                    "Playlist total duration: ${totalPlaylistMs / 60000} min, " +
+                        "policy=${config.stopPolicy}" +
+                        (if (config.stopPolicy == StopPolicy.STOP_AFTER_DURATION)
+                            " after ${config.sessionDurationHours}h" else "")
+                )
+            }
+
+            // Microphone setup (only when requested).
+            var micActive = config.micOn
+            if (micActive) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                    != PackageManager.PERMISSION_GRANTED
+                ) {
+                    LogStore.event("Microphone permission missing — continuing without mic")
+                    micActive = false
+                } else {
+                    val initialPipe = withContext(Dispatchers.IO) {
+                        FFmpegKitConfig.registerNewFFmpegPipe(this@StreamService)
+                    }
+                    micActive = MicMixer.start(initialPipe)
+                    if (micActive) {
+                        pipePath = initialPipe
+                    } else {
+                        safeClosePipe(initialPipe)
+                        pipePath = null
+                        LogStore.event("Microphone unavailable — continuing with video audio only")
+                    }
+                }
+            }
+            post { it.copy(micActive = micActive) }
+
+            var attempt = 0
+            while (!stopRequested) {
+                // Retry Now is one-shot: clear it once a new attempt begins.
+                consumeRetryNow()
+                // Network gate: don't burn retries while the radio is simply down.
+                if (!Net.isOnline(this)) {
+                    attempt++
+                    if (attempt > MAX_ATTEMPTS) {
+                        failNow("Internet connection lost. Could not recover the stream.")
+                        return
+                    }
+                    post {
+                        it.copy(
+                            phase = Phase.RECONNECTING,
+                            statusText = "Network problem...",
+                            attempt = attempt
+                        )
+                    }
+                    LogStore.event("Network unavailable — waiting ($attempt/$MAX_ATTEMPTS)")
+                    stoppableDelay(backoffMs(attempt))
+                    continue
+                }
+
+                post {
+                    it.copy(
+                        phase = Phase.CONNECTING,
+                        statusText = if (attempt == 0) "Connecting to YouTube..."
+                        else "Reconnecting $attempt/$MAX_ATTEMPTS...",
+                        attempt = attempt,
+                        liveFps = 0f,
+                        liveBitrateKbps = 0,
+                        speed = 0.0
+                    )
+                }
+
+                // Fresh mic pipe for every new RTMP session.
+                if (attempt > 0 && micActive) {
+                    pipePath?.let { safeClosePipe(it) }
+                    val freshPipe = withContext(Dispatchers.IO) {
+                        FFmpegKitConfig.registerNewFFmpegPipe(this@StreamService)
+                    }
+                    pipePath = freshPipe
+                    MicMixer.switchPipe(freshPipe)
+                }
+
+                val useHw = when (config.encoderPref) {
+                    com.videolive.app.model.EncoderPref.SOFTWARE -> false
+                    com.videolive.app.model.EncoderPref.HARDWARE -> hwPresent
+                    com.videolive.app.model.EncoderPref.AUTO -> hwPresent && !forceSoftware
+                }
+                attemptUsedHw = useHw
+                LogStore.event(
+                    "Encoder selected for this attempt: " +
+                        if (useHw) "h264_mediacodec (hardware)" else "libx264 (software)"
+                )
+
+                val args: List<String> = if (playlistMode) {
+                    // Concat demuxer list for this session's play order. The
+                    // list file lives next to the cache copies; it is rebuilt
+                    // on every attempt so a reconnect replays from the start
+                    // of the ordered list.
+                    val concatFile = File(cacheDir, "playlist_concat.txt")
+                    withContext(Dispatchers.IO) {
+                        concatFile.writeText(buildString {
+                            playOrder.forEach { i ->
+                                append("file '").append(loadedList[i].source.ffmpegInput).append("'\n")
+                            }
+                        })
+                    }
+                    FFmpegCommandBuilder.buildPlaylist(
+                        config,
+                        info.hasAudio,
+                        concatFile,
+                        destination,
+                        if (micActive) pipePath else null,
+                        useHw
+                    )
+                } else {
+                    FFmpegCommandBuilder.build(
+                        config,
+                        info,
+                        loaded.source.ffmpegInput,
+                        destination,
+                        if (micActive) pipePath else null,
+                        useHw
+                    )
+                }
+                // Full command for diagnostics — destination (contains the stream
+                // key) is replaced before logging; Sanitize masks it anyway.
+                val maskedCommand = args.joinToString(" ") {
+                    if (it == destination) "${destination.substringBefore("://")}://<hidden-key>" else it
+                }
+                LogStore.event("FFmpeg command: $maskedCommand")
+                LogStore.event("FFmpeg session starting (attempt ${attempt + 1})")
+                LogStore.event("Connecting to RTMP server...")
+
+                // Reset per-session evidence flags.
+                everConnected = false
+                connectTimedOut = false
+                prevStatFrames = 0
+                prevStatTimeMs = 0
+                measuredFps = 0f
+                softStallWarned = false
+                overloadStreak = 0
+                overloadWarned = false
+                prevBytes = -1L
+                prevBytesFrames = 0L
+                transportStallStreak = 0
+                attemptWallStartMs = 0L
+                driftWarned = false
+                driftCritical = false
+                var statsSeen = 0
+                var inputLogged = false
+                var encoderLogged = false
+                var muxerLogged = false
+                var rtmpFailureLogged = false
+                val stageOnLog: (String) -> Unit = { line ->
+                    val l = line.lowercase()
+                    if (!inputLogged && l.contains("input #")) {
+                        inputLogged = true
+                        LogStore.event("FFmpeg opened the input successfully")
+                    }
+                    if (!encoderLogged && l.contains("stream #") && l.contains("->")) {
+                        encoderLogged = true
+                        LogStore.event("Encoder initialized (H.264/AAC mapping active)")
+                    }
+                    // Verified encoder: parsed from the REAL output mapping
+                    // line ("Video: h264 (h264_mediacodec)" / "(libx264)").
+                    if (encoderInUse.isEmpty() && l.contains("video:")) {
+                        val name = when {
+                            l.contains("h264_mediacodec") -> "h264_mediacodec (hardware)"
+                            l.contains("libx264") -> "libx264 (software)"
+                            else -> ""
+                        }
+                        if (name.isNotEmpty()) {
+                            encoderInUse = name
+                            LogStore.event("Encoder in use (verified from output): $name")
+                            post { s -> s.copy(encoderName = name) }
+                        }
+                    }
+                    if (!muxerLogged && l.contains("output #")) {
+                        muxerLogged = true
+                        LogStore.event("FLV muxer initialized")
+                        post {
+                            if (it.phase == Phase.CONNECTING || it.phase == Phase.PREPARING) {
+                                it.copy(phase = Phase.ENCODING, statusText = "Encoder started...")
+                            } else it
+                        }
+                    }
+                    if (!rtmpFailureLogged && RTMP_FAILURE_MARKERS.any { l.contains(it) }) {
+                        rtmpFailureLogged = true
+                        LogStore.event("Engine reported RTMP/network failure: ${line.trim().take(180)}")
+                    }
+                }
+
+                lastProgressAt = System.currentTimeMillis()
+                val sessionStartedAt = System.currentTimeMillis()
+                val watchdog = scope.launch { watchdogLoop(sessionStartedAt) }
+                val result = ffmpeg.run(args, stageOnLog) { st ->
+                    statsSeen++
+                    lastProgressAt = System.currentTimeMillis()
+
+                    // Measured output cadence (independent of FFmpeg's own fps
+                    // field): frame delta over out_time delta.
+                    val statFrames = st.videoFrameNumber.toLong()
+                    val statTimeMs = st.time.toLong()
+                    if (prevStatTimeMs > 0 && statTimeMs > prevStatTimeMs) {
+                        val dt = statTimeMs - prevStatTimeMs
+                        if (dt >= 500) {
+                            measuredFps = (statFrames - prevStatFrames) * 1000f / dt
+                            prevStatFrames = statFrames
+                            prevStatTimeMs = statTimeMs
+                        }
+                    } else if (prevStatTimeMs == 0L) {
+                        prevStatFrames = statFrames
+                        prevStatTimeMs = statTimeMs
+                    }
+
+                    // Transport check on the same window: encoded frames must
+                    // produce outgoing bytes (FLV over RTMPS). Frames advance
+                    // with a frozen byte counter = writes blocked/disconnected.
+                    val outBytes = st.size.toLong()
+                    if (prevBytes >= 0) {
+                        val framesAdvanced = statFrames > prevBytesFrames
+                        val bytesAdvanced = outBytes > prevBytes
+                        transportStallStreak =
+                            if (framesAdvanced && !bytesAdvanced) transportStallStreak + 1 else 0
+                        if (transportStallStreak == 2) {
+                            LogStore.event(
+                                "TRANSPORT STALL suspected: frames encoding but output bytes " +
+                                    "frozen at $outBytes — RTMPS write blocked or disconnected"
+                            )
+                        }
+                    }
+                    prevBytes = outBytes
+                    prevBytesFrames = statFrames
+
+                    // Cumulative latency drift — the long-duration lag signal.
+                    // A healthy real-time pipeline keeps out_time close to
+                    // wall-clock elapsed; growing drift means encode or
+                    // transport is under real time and stutter/latency will
+                    // only get worse the longer the session runs.
+                    val driftSec: Double = if (attemptWallStartMs == 0L) {
+                        attemptWallStartMs = System.currentTimeMillis()
+                        0.0
+                    } else {
+                        ((System.currentTimeMillis() - attemptWallStartMs) - statTimeMs) / 1000.0
+                    }
+                    if (driftSec >= 15.0 && !driftWarned) {
+                        driftWarned = true
+                        LogStore.event(
+                            "LATENCY DRIFT growing: output ${String.format(Locale.US, "%.0f", driftSec)}s " +
+                                "behind real time — encode/transport slightly under 1.0x; " +
+                                "long sessions from here will progressively degrade"
+                        )

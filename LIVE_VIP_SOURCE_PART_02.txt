@@ -1,0 +1,3989 @@
+================================================================
+LIVE VIP — FULL SOURCE DUMP — PART 02
+Project: Live-bc (Android, package com.videolive.app)
+Commit: c871f1be5a0a682ed40480e486c10a1808ed06be  Branch: arena/623b9178-live-bc
+Generated: 2026-10-09T11:45:11Z
+================================================================
+
+========== FILE: app/src/main/java/com/videolive/app/ffmpeg/FFmpegCommandBuilder.kt ==========
+package com.videolive.app.ffmpeg
+
+import com.videolive.app.model.FrameMode
+import com.videolive.app.model.LoopMode
+import com.videolive.app.model.StreamConfig
+import com.videolive.app.model.VideoInfo
+import java.io.File
+import java.util.Locale
+
+/**
+ * Builds the FFmpeg argument list dynamically from the user's selections.
+ *
+ * Looping strategy (CRITICAL):
+ * The input is looped inside ONE FFmpeg session with `-stream_loop -1` paced
+ * by `-re`. The RTMP output is opened exactly once and is never closed at a
+ * loop boundary, so YouTube sees one continuous stream and output PTS/DTS
+ * stay monotonic.
+ *
+ * Playlists (Phase 3): multiple prepared cache files are played through the
+ * concat demuxer as ONE input, still ONE session / ONE RTMP output. Loop All
+ * adds `-stream_loop -1` around the whole list. Sequential/Shuffle play one
+ * pass and finish. This requires codec-compatible items (same video codec,
+ * resolution and audio layout) — enforced by the caller.
+ */
+object FFmpegCommandBuilder {
+
+    fun build(
+        config: StreamConfig,
+        info: VideoInfo,
+        ffmpegInput: String,
+        destinationUrl: String,
+        micPipePath: String?,
+        hardwareEncoder: Boolean = false
+    ): List<String> {
+        val (w, h) = config.outputSize()
+        val fps = config.fps
+        val bitrateK = config.targetBitrateKbps()
+
+        val args = mutableListOf<String>()
+
+        // Progress reporting (used for health monitoring + live stats).
+        args += listOf("-hide_banner", "-stats", "-stats_period", "1")
+
+        // Input 0: the local video, looped forever, paced at real-time speed.
+        args += listOf("-re", "-stream_loop", "-1", "-i", ffmpegInput)
+
+        appendInputsAndOutput(
+            args, config, info.hasAudio, w, h, fps, bitrateK, micPipePath, hardwareEncoder
+        )
+        args += destinationUrl
+        return args
+    }
+
+    /**
+     * Playlist variant: ONE concat-demuxer input over the prepared cache files.
+     * [concatListFile] must contain `file '<path>'` lines in play order.
+     */
+    fun buildPlaylist(
+        config: StreamConfig,
+        hasAudio: Boolean,
+        concatListFile: File,
+        destinationUrl: String,
+        micPipePath: String?,
+        hardwareEncoder: Boolean = false
+    ): List<String> {
+        val (w, h) = config.outputSize()
+        val fps = config.fps
+        val bitrateK = config.targetBitrateKbps()
+
+        val args = mutableListOf<String>()
+        args += listOf("-hide_banner", "-stats", "-stats_period", "1")
+
+        // Loop All wraps the whole playlist; Sequential/Shuffle play one pass.
+        args += listOf("-re")
+        if (config.loopMode == LoopMode.ALL) args += listOf("-stream_loop", "-1")
+        args += listOf("-f", "concat", "-safe", "0", "-i", concatListFile.absolutePath)
+
+        appendInputsAndOutput(args, config, hasAudio, w, h, fps, bitrateK, micPipePath, hardwareEncoder)
+        args += destinationUrl
+        return args
+    }
+
+    // Shared tail: extra inputs (silence/mic), video filter chain, encoders, muxer.
+    private fun appendInputsAndOutput(
+        args: MutableList<String>,
+        config: StreamConfig,
+        hasAudio: Boolean,
+        w: Int,
+        h: Int,
+        fps: Int,
+        bitrateK: Int,
+        micPipePath: String?,
+        hardwareEncoder: Boolean
+    ) {
+        var nextIndex = 1
+        var silenceIndex: Int? = null
+        var micIndex: Int? = null
+
+        if (!hasAudio && micPipePath == null) {
+            // YouTube requires an audio track — generate silence.
+            args += listOf(
+                "-f", "lavfi", "-i",
+                "anullsrc=channel_layout=stereo:sample_rate=44100"
+            )
+            silenceIndex = nextIndex++
+        }
+
+        if (micPipePath != null) {
+            // Live microphone PCM written by MicMixer into an FFmpegKit named pipe.
+            args += listOf("-f", "s16le", "-ar", "44100", "-ac", "1", "-i", micPipePath)
+            micIndex = nextIndex++
+        }
+
+        // Video mapping + framing (fit/fill + zoom/pan, applied at start only).
+        args += listOf("-map", "0:v:0")
+        args += listOf("-vf", videoFilter(config, w, h))
+
+        if (hardwareEncoder) {
+            // Android MediaCodec H.264 — the only hardware path this build
+            // packages. Standard AVCodecContext knobs only (bitrate, GOP,
+            // rate, profile); the wrapper maps them onto the codec. Rate
+            // control stays at the configured target bitrate.
+            args += listOf(
+                "-c:v", "h264_mediacodec",
+                "-b:v", "${bitrateK}k",
+                "-r", fps.toString(),
+                "-g", (fps * 2).toString(),
+                "-profile:v", "main"
+            )
+        } else {
+            // H.264 encode tuned for low-latency live streaming (CBR).
+            args += listOf(
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-tune", "zerolatency",
+                "-pix_fmt", "yuv420p",
+                "-r", fps.toString(),
+                "-g", (fps * 2).toString(),
+                "-keyint_min", fps.toString(),
+                "-sc_threshold", "0",
+                "-b:v", "${bitrateK}k",
+                "-maxrate", "${bitrateK}k",
+                "-bufsize", "${bitrateK * 2}k"
+            )
+        }
+
+        // Audio routing.
+        val volume = config.videoVolumePct.coerceIn(0, 100) / 100f
+        val micVolume = config.micVolumePct.coerceIn(0, 100) / 100f
+        when {
+            micPipePath != null && hasAudio -> {
+                // Real mixer: video audio (user volume) + microphone (own gain),
+                // via amix. normalize=0 keeps the video audio at its set level.
+                val vol = String.format(Locale.US, "%.2f", volume)
+                val mvol = String.format(Locale.US, "%.2f", micVolume)
+                args += listOf(
+                    "-filter_complex",
+                    "[0:a:0]volume=$vol[a0];" +
+                        "[$micIndex:a]aformat=sample_fmts=s16:sample_rates=44100:" +
+                        "channel_layouts=mono,volume=$mvol[m];" +
+                        "[a0][m]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]",
+                    "-map", "[aout]"
+                )
+            }
+            micPipePath != null -> {
+                // Video has no audio: mic becomes the only audio source.
+                val mvol = String.format(Locale.US, "%.2f", micVolume)
+                args += listOf(
+                    "-filter_complex",
+                    "[$micIndex:a]volume=$mvol[m]",
+                    "-map", "[m]"
+                )
+            }
+            hasAudio -> {
+                args += listOf("-map", "0:a:0?")
+                if (config.videoVolumePct < 100) {
+                    args += listOf("-af", String.format(Locale.US, "volume=%.2f", volume))
+                }
+            }
+            silenceIndex != null -> {
+                args += listOf("-map", "$silenceIndex:a:0")
+            }
+        }
+
+        // AAC audio, 44.1 kHz stereo — required by FLV/YouTube.
+        args += listOf("-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2")
+
+        // FLV output over RTMP/RTMPS. This URL is the ONLY output; it stays open
+        // across every loop of the video.
+        args += listOf("-f", "flv", "-flvflags", "no_duration_filesize")
+    }
+
+    /**
+     * Framing filter. FIT letterboxes, FILL crops; zoom (100-300%) and pan
+     * (-100..100 on both axes) are applied AFTER framing, on the composed
+     * canvas, so what the preview describes is exactly what the encoder sends.
+     * Defaults reproduce the proven fit+pad chain exactly.
+     */
+    fun videoFilter(config: StreamConfig, w: Int, h: Int): String {
+        val base = when (config.frameMode) {
+            FrameMode.FIT ->
+                "scale=$w:$h:force_original_aspect_ratio=decrease," +
+                    "pad=$w:$h:(ow-iw)/2:(oh-ih)/2:color=black"
+            FrameMode.FILL ->
+                "scale=$w:$h:force_original_aspect_ratio=increase," +
+                    "crop=$w:$h"
+        }
+        // CFR normalization: phone recordings are frequently variable-frame-
+        // rate. `-re` paces by timestamps, so VFR input produces periodic
+        // pacing jitter at the muxer (visible as ~1 s freezes on the server
+        // while the local file plays fine). A constant-rate `fps` filter is
+        // the standard fix and makes output cadence exact.
+        val cfr = ",fps=${config.fps}"
+
+        val zoom = config.zoomPct.coerceIn(100, 300) / 100f
+        val panX = config.panXPct.coerceIn(-100, 100) / 100f
+        val panY = config.panYPct.coerceIn(-100, 100) / 100f
+        if (zoom <= 1.001f && panX == 0f && panY == 0f) return "$base$cfr,setsar=1"
+
+        val z = String.format(Locale.US, "%.2f", zoom)
+        // Zoom in around the (optionally panned) centre of the framed canvas.
+        val px = String.format(Locale.US, "%.3f", panX)
+        val py = String.format(Locale.US, "%.3f", panY)
+        return base + "," +
+            "scale=iw*$z:ih*$z," +
+            "crop=$w:$h:(iw-$w)/2+$px*(iw-$w)/2:(ih-$h)/2+$py*(ih-$h)/2" +
+            cfr + ",setsar=1"
+    }
+
+    /** Combines server + key (or the advanced full URL) into the final
+     * destination. Returns null when anything is malformed. */
+    fun buildDestinationUrl(
+        fullUrlMode: Boolean,
+        serverUrl: String,
+        fullUrl: String,
+        streamKey: String
+    ): String? {
+        return if (fullUrlMode) {
+            val url = fullUrl.trim()
+            if (isValidRtmpUrl(url) && url.none { it.isWhitespace() } && hasHostAndPath(url)) url
+            else null
+        } else {
+            val server = serverUrl.trim().trimEnd('/')
+            val key = streamKey.trim()
+            when {
+                !isValidRtmpUrl(server) -> null
+                server.any { it.isWhitespace() } -> null
+                !hasHost(server) -> null
+                key.isEmpty() -> null
+                key.any { it.isWhitespace() } -> null
+                else -> "$server/$key"
+            }
+        }
+    }
+
+    fun isValidRtmpUrl(url: String): Boolean =
+        url.startsWith("rtmp://") || url.startsWith("rtmps://")
+
+    /** rtmp(s)://<host>[:port] — host part must be present. */
+    private fun hasHost(url: String): Boolean {
+        val rest = url.substringAfter("://")
+        val hostPart = rest.substringBefore('/').substringBefore('?')
+        return hostPart.isNotEmpty()
+    }
+
+    /** Full-URL mode additionally requires a path after the host. */
+    private fun hasHostAndPath(url: String): Boolean {
+        val rest = url.substringAfter("://")
+        val slash = rest.indexOf('/')
+        return slash > 0 && slash < rest.length - 1
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/ffmpeg/FFmpegManager.kt ==========
+package com.videolive.app.ffmpeg
+
+import com.arthenica.ffmpegkit.FFmpegKitConfig
+import com.arthenica.ffmpegkit.FFmpegSession
+import com.arthenica.ffmpegkit.FFmpegSessionCompleteCallback
+import com.arthenica.ffmpegkit.LogCallback
+import com.arthenica.ffmpegkit.Statistics
+import com.arthenica.ffmpegkit.StatisticsCallback
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionHandler
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
+
+sealed class RunResult {
+    object Cancelled : RunResult()
+    object Success : RunResult()
+    data class Failed(val error: ClassifiedError) : RunResult()
+}
+
+/**
+ * Owns the single live FFmpeg session. Execution is in-process (FFmpegKit links
+ * FFmpeg natively) — there is no external process that can die unnoticed.
+ *
+ * CRITICAL THREADING (stutter fix, measured rationale):
+ * ffmpeg-kit invokes the log/statistics callbacks ON THE FFmpeg EXECUTION
+ * THREAD. Any work done there (regex masking, date formatting, synchronized
+ * buffers, state posts) directly stalls decode/encode/mux for that moment.
+ * Progress lines arrive several times per second — exactly the cadence of the
+ * reported freezes. Therefore every callback here only ENQUEUES a tiny task;
+ * one dedicated dispatcher thread drains the queue and does the real work.
+ * The queue is bounded and drops diagnostic lines under pressure instead of
+ * ever letting diagnostics block the media pipeline.
+ */
+class FFmpegManager {
+
+    @Volatile private var session: FFmpegSession? = null
+
+    private val callbackExecutor = ThreadPoolExecutor(
+        1, 1,
+        0L, TimeUnit.MILLISECONDS,
+        LinkedBlockingQueue(4000),
+        { r -> Thread(r, "vl-ffmpeg-callbacks") },
+        RejectedExecutionHandler { _, _ ->
+            // Diagnostics may be dropped; the encoder never waits.
+        }
+    )
+
+    val ffmpegVersion: String
+        get() = try {
+            FFmpegKitConfig.getFFmpegVersion() ?: "unknown"
+        } catch (t: Throwable) {
+            "unavailable"
+        }
+
+    fun cancelCurrent() {
+        try {
+            session?.cancel()
+        } catch (t: Throwable) {
+            LogStore.event("Cancel failed: ${t.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * Runs one FFmpeg session and suspends until it ends.
+     * [onLog] receives every raw engine output line (already sanitized by the
+     * caller pipeline) so the service can detect pipeline stages and RTMP
+     * failures; [onStats] receives periodic encode statistics.
+     */
+    suspend fun run(
+        args: List<String>,
+        onLog: (String) -> Unit,
+        onStats: (Statistics) -> Unit
+    ): RunResult = suspendCancellableCoroutine { cont ->
+        val complete = FFmpegSessionCompleteCallback { s ->
+            callbackExecutor.execute {
+                val result = when {
+                    s.returnCode == null -> RunResult.Failed(
+                        ClassifiedError(
+                            com.videolive.app.ffmpeg.ErrorKind.ENGINE,
+                            "Streaming engine stopped unexpectedly."
+                        )
+                    )
+                    s.returnCode.isValueCancel -> RunResult.Cancelled
+                    s.returnCode.isValueSuccess -> RunResult.Success
+                    else -> RunResult.Failed(ErrorClassifier.classify(LogStore.recentTail()))
+                }
+                if (cont.isActive) cont.resume(result)
+            }
+        }
+        val logCallback = LogCallback { log ->
+            val message = log.message ?: ""
+            callbackExecutor.execute {
+                LogStore.append(message)
+                try {
+                    onLog(message)
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        val statsCallback = StatisticsCallback { st ->
+            callbackExecutor.execute { onStats(st) }
+        }
+
+        val s = FFmpegSession.create(
+            args.toTypedArray(),
+            complete,
+            logCallback,
+            statsCallback
+        )
+        session = s
+        FFmpegKitConfig.asyncFFmpegExecute(s)
+
+        cont.invokeOnCancellation {
+            try {
+                s.cancel()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/ffmpeg/FFmpegRuntime.kt ==========
+package com.videolive.app.ffmpeg
+
+import android.content.Context
+import android.os.Build
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegKitConfig
+import com.arthenica.ffmpegkit.FFprobeKit
+import com.arthenica.ffmpegkit.ReturnCode
+import com.videolive.app.util.Sanitize
+import java.io.File
+import java.util.zip.ZipFile
+
+sealed class EngineStatus {
+    object Ready : EngineStatus()
+    data class UnsupportedAbi(val deviceAbis: List<String>, val apkAbis: Set<String>) : EngineStatus()
+    data class InitFailed(val reason: String) : EngineStatus()
+    data class TestFailed(val reason: String) : EngineStatus()
+}
+
+/**
+ * Real FFmpeg runtime verification.
+ *
+ * Availability is NOT decided by "the class exists". This:
+ *  1. detects the device ABI(s),
+ *  2. inventories the native libraries actually packaged inside the installed
+ *     APK (the lib/<abi>/ .so entries),
+ *  3. loads the FFmpegKit native engine,
+ *  4. runs a harmless real execution test (`ffmpeg -version`) and checks the
+ *     return code.
+ * Every step is written to the sanitized developer log (Advanced Logs).
+ */
+object FFmpegRuntime {
+
+    data class Report(
+        val status: EngineStatus,
+        val ffmpegVersion: String?,
+        val deviceAbis: List<String>,
+        val apkAbis: Set<String>,
+        val matchedAbi: String?,
+        val userMessage: String
+    ) {
+        val ready: Boolean get() = status is EngineStatus.Ready
+    }
+
+    @Volatile private var cached: Report? = null
+    @Volatile private var encodersLogged = false
+    @Volatile var hwH264Available: Boolean? = null
+        private set
+
+    /** True only when the packaged FFmpeg build lists a real Android hardware
+     * H.264 encoder (h264_mediacodec / v4l2m2m). Used by AUTO encoder mode. */
+    fun hasHardwareH264(): Boolean {
+        hwH264Available?.let { return it }
+        return try {
+            val out = FFmpegKit.execute("-hide_banner -encoders").output.orEmpty()
+            val hw = out.lineSequence().any { line ->
+                (line.contains("h264_mediacodec") || line.contains("h264_v4l2m2m")) &&
+                    line.contains("V")
+            }
+            hwH264Available = hw
+            hw
+        } catch (t: Throwable) {
+            hwH264Available = false
+            false
+        }
+    }
+
+    /**
+     * P1.10 evidence: enumerate which H.264 encoders this FFmpeg build
+     * actually packages. Runs once per process, on a background thread.
+     * A hardware option is only ever offered if a hw encoder is proven to
+     * exist here — never assumed.
+     */
+    fun logEncoderCapabilities() {
+        if (encodersLogged) return
+        encodersLogged = true
+        try {
+            val session = FFmpegKit.execute("-hide_banner -encoders")
+            val out = session.output.orEmpty()
+            hwH264Available = out.lineSequence().any { line ->
+                (line.contains("h264_mediacodec") || line.contains("h264_v4l2m2m")) &&
+                    line.contains("V")
+            }
+            val h264 = out.lineSequence()
+                .map { it.trim() }
+                .filter { it.contains("H.264") || it.contains("h264") }
+                .toList()
+            val hw = h264.filter {
+                it.contains("mediacodec") || it.contains("v4l2m2m") ||
+                    it.contains("nvenc") || it.contains("qsv") || it.contains("videotoolbox")
+            }
+            LogStore.event(
+                "H.264 encoders packaged: " + (h264.joinToString(" | ").ifEmpty { "none found" })
+            )
+            LogStore.event(
+                if (hw.isEmpty()) {
+                    "No hardware H.264 encoder exists in this FFmpeg build — software " +
+                        "libx264 (veryfast/zerolatency) is the only tested encode path; " +
+                        "a hw option is intentionally NOT offered."
+                } else {
+                    "Hardware H.264 encoders present: ${hw.joinToString(" | ")}"
+                }
+            )
+        } catch (t: Throwable) {
+            LogStore.event("Encoder capability probe failed: ${t.javaClass.simpleName}")
+        }
+    }
+
+    fun verify(context: Context, force: Boolean = false): Report {
+        cached?.let { if (!force) return it }
+        val report = runVerification(context.applicationContext)
+        cached = report
+        return report
+    }
+
+    private fun runVerification(context: Context): Report {
+        val deviceAbis = Build.SUPPORTED_ABIS.toList()
+        LogStore.event("FFmpeg initialization started")
+        LogStore.event("Device ABIs: ${deviceAbis.joinToString(", ")}")
+
+        // 1) Native libraries actually packaged inside this APK.
+        val apkAbis = listApkAbis(context)
+        LogStore.event(
+            "Native libraries packaged in APK for: " +
+                if (apkAbis.isEmpty()) "NONE" else apkAbis.joinToString(", ")
+        )
+
+        val matched = deviceAbis.firstOrNull { it in apkAbis }
+        if (matched == null) {
+            LogStore.event("ABI check FAILED: no packaged library for this device")
+            return Report(
+                EngineStatus.UnsupportedAbi(deviceAbis, apkAbis),
+                null, deviceAbis, apkAbis, null,
+                "FFmpeg is not available for this device architecture."
+            )
+        }
+        LogStore.event("ABI check OK: FFmpeg binary/library found for $matched")
+
+        // 2) Java-side dependencies of FFmpegKit. The engine AAR is bundled
+        //    locally, so its transitive deps (smart-exception) must be added
+        //    explicitly. FFmpegKit references com.arthenica.smartexception.java.Exceptions
+        //    during init; if it is missing the device dies with NoClassDefFoundError.
+        try {
+            Class.forName("com.arthenica.smartexception.java.Exceptions")
+            Class.forName("com.arthenica.smartexception.AbstractExceptions")
+            LogStore.event("SmartException dependency loaded")
+        } catch (t: Throwable) {
+            val reason = "SmartException classes missing from APK: " +
+                "${t.javaClass.simpleName}: ${t.message}"
+            LogStore.event(reason)
+            return Report(
+                EngineStatus.InitFailed(reason),
+                null, deviceAbis, apkAbis, matched,
+                "Streaming engine initialization failed."
+            )
+        }
+
+        // 3) Engine initialization (loads the native libraries).
+        val version = try {
+            val v = FFmpegKitConfig.getFFmpegVersion() ?: "unknown"
+            LogStore.event("FFmpegKit initialized successfully. Version: $v")
+            v
+        } catch (t: Throwable) {
+            val reason = "${t.javaClass.simpleName}: ${t.message}"
+            LogStore.event("FFmpeg initialization FAILED: $reason")
+            return Report(
+                EngineStatus.InitFailed(reason),
+                null, deviceAbis, apkAbis, matched,
+                "Streaming engine initialization failed."
+            )
+        }
+
+        // 4) Real execution test: run `ffmpeg -version` and check the result.
+        val testOk = try {
+            val session = FFmpegKit.execute("-version")
+            val ok = ReturnCode.isSuccess(session.returnCode)
+            val firstLine = session.output?.lineSequence()?.firstOrNull().orEmpty()
+            LogStore.event(
+                "FFmpeg execution test (-version): " +
+                    if (ok) "SUCCESS" else "FAILED (rc=${session.returnCode})"
+            )
+            if (firstLine.isNotEmpty()) LogStore.event("Test output: ${Sanitize.mask(firstLine)}")
+            if (!ok) {
+                LogStore.event("Test logs: ${Sanitize.mask(session.logsAsString ?: "")}")
+            }
+            ok
+        } catch (t: Throwable) {
+            LogStore.event("FFmpeg execution test crashed: ${t.javaClass.simpleName}: ${t.message}")
+            false
+        }
+
+        if (!testOk) {
+            return Report(
+                EngineStatus.TestFailed("ffmpeg -version did not execute successfully"),
+                version, deviceAbis, apkAbis, matched,
+                "Streaming engine initialization failed."
+            )
+        }
+
+        // 5) FFprobe execution test (used to verify SAF/cache video inputs).
+        val probeOk = try {
+            val session = FFprobeKit.execute("-version")
+            val ok = ReturnCode.isSuccess(session.returnCode)
+            LogStore.event(
+                "FFprobe execution test (-version): " +
+                    if (ok) "SUCCESS" else "FAILED (rc=${session.returnCode})"
+            )
+            ok
+        } catch (t: Throwable) {
+            LogStore.event("FFprobe execution test crashed: ${t.javaClass.simpleName}: ${t.message}")
+            false
+        }
+        if (!probeOk) {
+            return Report(
+                EngineStatus.TestFailed("ffprobe -version did not execute successfully"),
+                version, deviceAbis, apkAbis, matched,
+                "Streaming engine initialization failed."
+            )
+        }
+
+        LogStore.event("FFmpeg runtime verification: READY")
+        return Report(EngineStatus.Ready, version, deviceAbis, apkAbis, matched, "")
+    }
+
+    /** Lists the ABIs that have native libraries inside the installed APK. */
+    private fun listApkAbis(context: Context): Set<String> {
+        return try {
+            val apkPath = context.applicationInfo.sourceDir
+            val abis = mutableSetOf<String>()
+            ZipFile(apkPath).use { zip ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val name = entries.nextElement().name
+                    if (name.startsWith("lib/") && name.endsWith(".so")) {
+                        val abi = name.removePrefix("lib/").substringBefore('/')
+                        if (abi.isNotEmpty()) abis.add(abi)
+                    }
+                }
+            }
+            abis
+        } catch (t: Throwable) {
+            LogStore.event("APK native library inventory failed: ${t.javaClass.simpleName}")
+            emptySet()
+        }
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/ffmpeg/LogStore.kt ==========
+package com.videolive.app.ffmpeg
+
+import com.videolive.app.util.Sanitize
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+/**
+ * In-memory sanitized log ring buffer, shown on the Advanced Logs screen.
+ * Every line is masked by [Sanitize] so the stream key can never appear here.
+ */
+object LogStore {
+
+    private const val CAPACITY = 600
+    private val lines = ArrayDeque<String>()
+    private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
+
+    /** Tags every pipeline event of the current START LIVE session. */
+    @Volatile
+    private var sessionTag: String = ""
+
+    /** Begins (or replaces) the session tag; returns it, e.g. "session=384". */
+    fun startSession(): String {
+        val tag = "session=" + (100 + kotlin.random.Random.nextInt(900))
+        sessionTag = tag
+        return tag
+    }
+
+    @Synchronized
+    fun append(rawLine: String) {
+        val line = Sanitize.mask(rawLine).trimEnd()
+        if (line.isEmpty()) return
+        val stamp = timeFormat.format(Date())
+        for (l in line.split('\n')) {
+            val clean = l.trimEnd()
+            if (clean.isEmpty()) continue
+            lines.addLast("[$stamp] $clean")
+            if (lines.size > CAPACITY) lines.removeFirst()
+        }
+    }
+
+    @Synchronized
+    fun event(message: String) {
+        val stamp = timeFormat.format(Date())
+        val tag = sessionTag
+        val prefix = if (tag.isNotEmpty()) "[$stamp $tag] " else "[$stamp] "
+        lines.addLast(prefix + Sanitize.mask(message))
+        if (lines.size > CAPACITY) lines.removeFirst()
+    }
+
+    fun hasSession(): Boolean = sessionTag.isNotEmpty()
+
+    @Synchronized
+    fun snapshot(): String = if (lines.isEmpty()) "(no logs yet)" else lines.joinToString("\n")
+
+    @Synchronized
+    fun recentTail(count: Int = 60): String =
+        lines.takeLast(count).joinToString("\n")
+
+    @Synchronized
+    fun clear() = lines.clear()
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/media/CacheIndex.kt ==========
+package com.videolive.app.media
+
+import com.videolive.app.ffmpeg.LogStore
+import java.io.File
+import org.json.JSONObject
+
+/**
+ * Bounded cache index for prepared video copies: avoids copying the same
+ * source file again when an identical, complete cache copy already exists.
+ *
+ * Keyed by (content URI + declared size). Entries are validated on lookup
+ * (file exists and length matches). At most [MAX_ENTRIES] copies are kept;
+ * eviction never touches files the running stream is using (callers only
+ * evict when the service is idle).
+ */
+object CacheIndex {
+
+    private const val MAX_ENTRIES = 3
+
+    private fun indexFile(dir: File) = File(dir, "cache_index.json")
+
+    private fun read(dir: File): MutableMap<String, JSONObject> {
+        val map = LinkedHashMap<String, JSONObject>()
+        try {
+            val f = indexFile(dir)
+            if (f.exists()) {
+                val root = JSONObject(f.readText())
+                root.keys().forEach { k -> map[k] = root.getJSONObject(k) }
+            }
+        } catch (_: Throwable) {
+        }
+        return map
+    }
+
+    private fun write(dir: File, map: Map<String, JSONObject>) {
+        try {
+            val root = JSONObject()
+            map.forEach { (k, v) -> root.put(k, v) }
+            indexFile(dir).writeText(root.toString())
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun keyFor(uri: String, size: Long): String = "$uri|$size"
+
+    /** Returns a verified existing cache file, or null. */
+    fun lookup(dir: File, uri: String, size: Long): File? {
+        val entry = read(dir)[keyFor(uri, size)] ?: return null
+        return try {
+            val path = entry.getString("path")
+            val expected = entry.getLong("size")
+            val f = File(path)
+            if (f.exists() && f.length() == expected && expected > 0) f else null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /** Records a new copy and evicts the oldest beyond [MAX_ENTRIES]. */
+    fun put(dir: File, uri: String, size: Long, file: File, evictable: List<File>) {
+        val map = read(dir)
+        map[keyFor(uri, size)] = JSONObject()
+            .put("path", file.absolutePath)
+            .put("size", file.length())
+        // Evict beyond the bound (never the file we just stored).
+        while (map.size > MAX_ENTRIES) {
+            val oldestKey = map.keys.first()
+            val oldest = map.remove(oldestKey)
+            val path = oldest?.optString("path")
+            if (path != null) {
+                val f = File(path)
+                if (f.absolutePath != file.absolutePath && f !in evictable) {
+                    f.delete()
+                    LogStore.event("Cache eviction: removed old copy (${f.length()} bytes)")
+                }
+            }
+        }
+        write(dir, map)
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/media/InputSource.kt ==========
+package com.videolive.app.media
+
+/**
+ * Where FFmpeg reads the video from.
+ *
+ * [SafSource] uses FFmpegKit's built-in SAF protocol: the content:// Uri is
+ * handed to FFmpeg through a registered file descriptor. No copy of the video
+ * file is made — preferred for multi-GB files, but only used after it has
+ * been verified with FFprobe.
+ *
+ * [FileSource] is the reliable cache-file bridge: bytes are streamed from
+ * ContentResolver.openInputStream(uri) into cacheDir (buffered, never loaded
+ * fully into RAM). Temporary copies are deleted after streaming stops and
+ * whenever a new video is selected.
+ */
+sealed class InputSource {
+    abstract val ffmpegInput: String
+    abstract val displayName: String
+    abstract val sizeBytes: Long
+    abstract val isTemporaryCopy: Boolean
+
+    data class SafSource(
+        override val ffmpegInput: String,
+        override val displayName: String,
+        override val sizeBytes: Long
+    ) : InputSource() {
+        override val isTemporaryCopy: Boolean get() = false
+    }
+
+    data class FileSource(
+        val path: String,
+        override val displayName: String,
+        override val sizeBytes: Long,
+        val deletable: Boolean
+    ) : InputSource() {
+        override val ffmpegInput: String get() = path
+        override val isTemporaryCopy: Boolean get() = deletable
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/media/MediaProbe.kt ==========
+package com.videolive.app.media
+
+import android.content.Context
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.os.Build
+import com.arthenica.ffmpegkit.FFprobeKit
+import com.videolive.app.ffmpeg.LogStore
+import com.videolive.app.model.VideoInfo
+
+/**
+ * Media inspection.
+ *
+ * [probeWithMmr] uses Android's own MediaMetadataRetriever directly with the
+ * content:// Uri — it works for anything the platform can play and needs no
+ * FFmpeg, so the UI can show metadata/thumbnail immediately.
+ *
+ * [probe] uses real FFprobe for the exact stream layout FFmpeg will see
+ * (video stream, audio stream, fps, codecs).
+ */
+object MediaProbe {
+
+    /**
+     * Fast platform metadata straight from the Uri.
+     * When FFprobe has not confirmed the audio layout yet, [VideoInfo.hasAudio]
+     * is reported as true and the streaming pipeline uses an OPTIONAL audio map
+     * (`-map 0:a:0?`), which is safe whether or not the file has audio.
+     */
+    fun probeWithMmr(context: Context, uri: Uri): VideoInfo? {
+        var mmr: MediaMetadataRetriever? = null
+        return try {
+            mmr = MediaMetadataRetriever()
+            mmr.setDataSource(context, uri)
+            val width = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                ?.toIntOrNull() ?: 0
+            val height = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                ?.toIntOrNull() ?: 0
+            if (width <= 0 || height <= 0) {
+                LogStore.event("Platform metadata: no decodable video in URI")
+                return null
+            }
+            val durationMs = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+            var fps = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                fps = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+                    ?.toFloatOrNull()?.let { Math.round(it).toInt() } ?: 0
+            }
+            VideoInfo(
+                durationMs = durationMs,
+                width = width,
+                height = height,
+                fps = fps,
+                hasAudio = true,
+                sizeBytes = -1L,
+                videoCodec = "",
+                audioCodec = ""
+            )
+        } catch (t: Throwable) {
+            LogStore.event("Platform metadata failed: ${t.javaClass.simpleName}")
+            null
+        } finally {
+            try {
+                mmr?.release()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    fun probe(source: InputSource): VideoInfo? {
+        return try {
+            val session = FFprobeKit.getMediaInformation(source.ffmpegInput)
+            val info = session.mediaInformation
+            if (info == null) {
+                LogStore.event("Probe failed: no media information for ${source.displayName}")
+                null
+            } else {
+                var width = 0
+                var height = 0
+                var fps = 0
+                var hasAudio = false
+                var videoCodec = ""
+                var audioCodec = ""
+
+                for (stream in info.streams.orEmpty()) {
+                    when (stream.type) {
+                        "video" -> {
+                            if (width == 0) {
+                                width = stream.width?.toInt() ?: 0
+                                height = stream.height?.toInt() ?: 0
+                                videoCodec = stream.codec ?: ""
+                                fps = parseFps(stream.realFrameRate)
+                                if (fps == 0) fps = parseFps(stream.averageFrameRate)
+                            }
+                        }
+                        "audio" -> {
+                            hasAudio = true
+                            if (audioCodec.isEmpty()) audioCodec = stream.codec ?: ""
+                        }
+                    }
+                }
+
+                if (width == 0 || height == 0) {
+                    LogStore.event("Probe: no decodable video stream in ${source.displayName}")
+                    return null
+                }
+
+                val durationMs = (info.duration?.toDoubleOrNull() ?: 0.0).let { (it * 1000).toLong() }
+                val sizeBytes = info.size?.toLongOrNull() ?: source.sizeBytes
+
+                VideoInfo(
+                    durationMs = durationMs,
+                    width = width,
+                    height = height,
+                    fps = fps,
+                    hasAudio = hasAudio,
+                    sizeBytes = sizeBytes,
+                    videoCodec = videoCodec,
+                    audioCodec = audioCodec
+                )
+            }
+        } catch (t: Throwable) {
+            LogStore.event("Probe error: ${t.javaClass.simpleName}")
+            null
+        }
+    }
+
+    private fun parseFps(raw: String?): Int {
+        if (raw.isNullOrBlank()) return 0
+        val parts = raw.split("/")
+        return try {
+            if (parts.size == 2) {
+                val num = parts[0].toDouble()
+                val den = parts[1].toDouble()
+                if (den > 0 && num > 0) Math.round(num / den).toInt() else 0
+            } else {
+                Math.round(raw.toDouble()).toInt()
+            }
+        } catch (t: Throwable) {
+            0
+        }
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/media/TexturePreview.kt ==========
+package com.videolive.app.media
+
+import android.content.Context
+import android.graphics.Matrix
+import android.graphics.SurfaceTexture
+import android.media.MediaPlayer
+import android.net.Uri
+import android.view.TextureView
+import com.videolive.app.ffmpeg.LogStore
+import com.videolive.app.model.FrameMode
+
+/**
+ * Phase-2 preview: a TextureView whose transform matrix is computed from the
+ * SAME framing settings the encoder uses (Fit/Fill + zoom + pan), so what the
+ * user sees is exactly what the stream sends.
+ *
+ * The preview canvas itself is aspect-correct (the container is resized to
+ * 9:16 or 16:9 by the activity), therefore:
+ *  - FIT letterboxes identically to the encoder's pad filter,
+ *  - FILL crops identically to the encoder's crop filter,
+ *  - zoom/pan translate/scale identically to the encoder's scale+crop math.
+ *
+ * Playback is local MediaPlayer only; it never touches the streaming engine.
+ */
+class TexturePreview(private val view: TextureView) : TextureView.SurfaceTextureListener {
+
+    data class Framing(
+        val mode: FrameMode,
+        val zoomPct: Int,
+        val panXPct: Int,
+        val panYPct: Int
+    )
+
+    var framing = Framing(FrameMode.FIT, 100, 0, 0)
+
+    var onEnded: (() -> Unit)? = null
+    var onFailed: (() -> Unit)? = null
+
+    private var player: MediaPlayer? = null
+    private var prepared = false
+    private var videoW = 0
+    private var videoH = 0
+
+    init {
+        view.surfaceTextureListener = this
+    }
+
+    fun play(context: Context, uri: Uri) {
+        stop()
+        prepared = false
+        videoW = 0
+        videoH = 0
+        try {
+            val p = MediaPlayer()
+            p.setDataSource(context.applicationContext, uri)
+            p.setAudioStreamType(android.media.AudioManager.STREAM_MUSIC)
+            p.setOnPreparedListener {
+                prepared = true
+                videoW = it.videoWidth
+                videoH = it.videoHeight
+                maybeStart()
+            }
+            p.setOnVideoSizeChangedListener { mp, w, h ->
+                videoW = w
+                videoH = h
+                refreshMatrix()
+            }
+            p.setOnCompletionListener { onEnded?.invoke() }
+            p.setOnErrorListener { _, what, extra ->
+                LogStore.event("Preview playback error $what/$extra")
+                onFailed?.invoke()
+                true
+            }
+            p.prepareAsync()
+            player = p
+        } catch (t: Throwable) {
+            LogStore.event("Preview start failed: ${t.javaClass.simpleName}")
+            onFailed?.invoke()
+        }
+    }
+
+    fun stop() {
+        val p = player
+        player = null
+        prepared = false
+        if (p != null) {
+            try {
+                p.setOnPreparedListener(null)
+                p.setOnCompletionListener(null)
+                p.setOnErrorListener(null)
+                p.stop()
+            } catch (_: Throwable) {
+            }
+            try {
+                p.release()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    fun refreshMatrix() {
+        applyMatrix()
+    }
+
+    private fun maybeStart() {
+        val p = player ?: return
+        val st = view.surfaceTexture ?: return
+        try {
+            p.setSurface(android.view.Surface(st))
+            p.start()
+            applyMatrix()
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** Same math as FFmpegCommandBuilder.videoFilter, mirrored for the view. */
+    private fun applyMatrix() {
+        val vw = videoW.toFloat()
+        val vh = videoH.toFloat()
+        val cw = view.width.toFloat()
+        val ch = view.height.toFloat()
+        if (vw <= 0f || vh <= 0f || cw <= 0f || ch <= 0f) return
+
+        val fit = minOf(cw / vw, ch / vh)
+        val fill = maxOf(cw / vw, ch / vh)
+        val base = if (framing.mode == FrameMode.FILL) fill else fit
+        val z = framing.zoomPct.coerceIn(100, 300) / 100f
+        val sx = base * z
+        val sy = base * z
+
+        val scaledW = vw * sx
+        val scaledH = vh * sy
+        var dx = (cw - scaledW) / 2f
+        var dy = (ch - scaledH) / 2f
+
+        // Pan moves within the hidden (cropped) area, like the encoder crop.
+        val extraX = maxOf(scaledW - cw, 0f)
+        val extraY = maxOf(scaledH - ch, 0f)
+        dx -= framing.panXPct.coerceIn(-100, 100) / 100f * extraX / 2f
+        dy -= framing.panYPct.coerceIn(-100, 100) / 100f * extraY / 2f
+
+        val m = Matrix()
+        m.setScale(sx, sy)
+        m.postTranslate(dx, dy)
+        view.setTransform(m)
+    }
+
+    override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+        if (prepared) maybeStart()
+    }
+
+    override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+        applyMatrix()
+    }
+
+    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+        return true
+    }
+
+    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/media/UriValidator.kt ==========
+package com.videolive.app.media
+
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import com.videolive.app.ffmpeg.LogStore
+
+/**
+ * Result of validating a content:// Uri returned by ACTION_OPEN_DOCUMENT.
+ * The Uri is always treated as an opaque content Uri — NEVER as a file path.
+ */
+data class UriCheck(
+    val openable: Boolean,
+    val permissionDenied: Boolean,
+    val mimeType: String?,
+    val displayName: String?,
+    val sizeBytes: Long
+)
+
+object UriValidator {
+
+    fun check(context: Context, uri: Uri): UriCheck {
+        var permissionDenied = false
+        var openable = false
+        var sizeBytes = -1L
+
+        val mimeType = try {
+            context.contentResolver.getType(uri)
+        } catch (t: Throwable) {
+            null
+        }
+
+        val displayName = queryDisplayName(context, uri)
+
+        try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                openable = true
+                sizeBytes = pfd.statSize
+            }
+        } catch (e: SecurityException) {
+            permissionDenied = true
+            LogStore.event("URI validation: permission denied for $uri")
+        } catch (t: Throwable) {
+            openable = false
+            LogStore.event("URI validation: cannot open ($uri): ${t.javaClass.simpleName}")
+        }
+
+        return UriCheck(openable, permissionDenied, mimeType, displayName, sizeBytes)
+    }
+
+    fun queryDisplayName(context: Context, uri: Uri): String? = try {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
+        }
+    } catch (t: Throwable) {
+        null
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/media/VideoLoader.kt ==========
+package com.videolive.app.media
+
+import android.content.Context
+import android.net.Uri
+import com.videolive.app.data.VideoRepository
+import com.videolive.app.ffmpeg.LogStore
+import com.videolive.app.model.VideoInfo
+import java.io.BufferedInputStream
+import java.io.File
+import java.io.FileOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+/**
+ * Specific, user-facing failure reasons for the video input pipeline.
+ */
+class VideoInputException(
+    val kind: Kind,
+    message: String
+) : Exception(message) {
+    enum class Kind { PERMISSION, UNREADABLE, UNDECODABLE }
+}
+
+data class LoadedVideo(
+    val source: InputSource,
+    val info: VideoInfo
+)
+
+/**
+ * Turns an Android content:// Uri (ACTION_OPEN_DOCUMENT) into a REAL, readable
+ * file input for FFmpeg.
+ *
+ * History: a "SAF zero-copy" input (`saf:<name>`) was tried, but FFmpeg cannot
+ * reliably read that pseudo path — it produced "moov atom not found" /
+ * "Invalid data found when processing input". ContentResolver access is NOT
+ * FFmpeg access, so that path was removed.
+ *
+ * Pipeline now (byte-level, proven on device):
+ *  1. [inspect] — open the Uri via ContentResolver, read name/size/MIME, pull
+ *     platform metadata with MediaMetadataRetriever (works directly on the Uri).
+ *     Fast; powers the immediate UI (thumbnail, name, duration, ...).
+ *  2. [prepareForFFmpeg] — buffered streaming copy of the ACTUAL BYTES from
+ *     ContentResolver.openInputStream(uri) into an app-private cache file
+ *     (1 MB buffer — never loads the video into RAM, works for files far
+ *     larger than RAM). After the copy:
+ *       - file exists, non-empty, byte count matches the source
+ *       - a real FFprobe run against the cache file must succeed
+ *     Only then is the cache path handed to FFmpeg as `-i <real file>`.
+ *  The cache file stays in place for the whole FFmpeg session and is deleted
+ *     after streaming stops (or on next app start via [purgeStaleCache]).
+ */
+object VideoLoader {
+
+    private const val CACHE_DIR = "videos"
+    private const val BUFFER_SIZE = 1024 * 1024 // 1 MB — spec: never copy into RAM whole
+
+    /**
+     * Single-flight guard for input preparation. No matter how many callers
+     * (selection flow, START LIVE rebuild, service reload) ask at the same
+     * time: exactly ONE cache copy ever runs; every other caller waits and
+     * then reuses the finished result.
+     */
+    private val prepareMutex = Mutex()
+
+    /**
+     * Prepares the FFmpeg input once. If a preparation is already running,
+     * waits for it and returns its result; if a video is already prepared,
+     * returns it without copying again.
+     */
+    suspend fun prepareOnce(
+        context: Context,
+        uri: Uri,
+        inspection: Inspection,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): LoadedVideo = prepareMutex.withLock {
+        VideoRepository.current?.let { return@withLock it }
+        val loaded = withContext(Dispatchers.IO) {
+            prepareForFFmpeg(context.applicationContext, uri, inspection, onProgress)
+        }
+        VideoRepository.current = loaded
+        VideoRepository.currentUri = uri
+        loaded
+    }
+
+    /** One-shot single-flight variant: inspect + prepare exactly once. */
+    suspend fun loadOnce(
+        context: Context,
+        uri: Uri,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): LoadedVideo = prepareMutex.withLock {
+        VideoRepository.current?.let { return@withLock it }
+        val loaded = withContext(Dispatchers.IO) {
+            load(context.applicationContext, uri, onProgress)
+        }
+        VideoRepository.current = loaded
+        VideoRepository.currentUri = uri
+        loaded
+    }
+
+    data class Inspection(
+        val displayName: String,
+        val sizeBytes: Long,
+        val mimeType: String?,
+        val platformInfo: VideoInfo?
+    )
+
+    /**
+     * Fast validation + platform metadata. Throws [VideoInputException] with a
+     * precise message when the Uri cannot be used.
+     */
+    fun inspect(context: Context, uri: Uri): Inspection {
+        val check = UriValidator.check(context, uri)
+        LogStore.event("Selected URI: $uri")
+        LogStore.event("MIME type: ${check.mimeType ?: "(provider returned none)"}")
+        LogStore.event("Readable: ${check.openable}")
+
+        if (check.permissionDenied) {
+            throw VideoInputException(
+                VideoInputException.Kind.PERMISSION,
+                "Permission denied. Please select the video again."
+            )
+        }
+        if (!check.openable) {
+            throw VideoInputException(
+                VideoInputException.Kind.UNREADABLE,
+                "Unable to read this video."
+            )
+        }
+
+        val displayName = check.displayName
+            ?: uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null }
+            ?: "video"
+
+        val platformInfo = MediaProbe.probeWithMmr(context, uri)
+        if (platformInfo != null) {
+            LogStore.event(
+                "Metadata: ${platformInfo.width}x${platformInfo.height}, " +
+                    "${platformInfo.durationMs} ms, fps=${platformInfo.fps}"
+            )
+        }
+
+        val mimeType = check.mimeType
+        if (platformInfo == null && mimeType != null && !looksLikeVideoMime(mimeType)) {
+            throw VideoInputException(
+                VideoInputException.Kind.UNDECODABLE,
+                "This video cannot be read or decoded."
+            )
+        }
+        if (platformInfo == null) {
+            throw VideoInputException(
+                VideoInputException.Kind.UNDECODABLE,
+                "This video cannot be read or decoded."
+            )
+        }
+
+        LogStore.event("Android content URI accessible")
+        return Inspection(displayName, check.sizeBytes, mimeType, platformInfo)
+    }
+
+    /**
+     * Builds the FFmpeg input: a complete byte-level cache copy of the video
+     * plus a real FFprobe verification of that file. Streaming MUST NOT start
+     * before this returns — the copy is finished and verified at that point.
+     *
+     * [onProgress] (called on the copy thread) receives (copiedBytes, totalBytes);
+     * totalBytes is -1 when the provider did not report a size.
+     */
+    fun prepareForFFmpeg(
+        context: Context,
+        uri: Uri,
+        inspection: Inspection,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): LoadedVideo {
+        val copy = copyToCache(context, uri, inspection.displayName, inspection.sizeBytes, onProgress)
+            ?: throw VideoInputException(
+                VideoInputException.Kind.UNREADABLE,
+                "Unable to read this video."
+            )
+        LogStore.event("FFmpeg cache ready: ${copy.length()} bytes (${copy.length() / (1024 * 1024)} MB)")
+
+        val fileSource = InputSource.FileSource(
+            path = copy.absolutePath,
+            displayName = inspection.displayName,
+            sizeBytes = copy.length(),
+            deletable = true
+        )
+
+        // Real probe test against the ACTUAL cached file — never stream without it.
+        LogStore.event("FFmpeg probe started (cache file)")
+        val probed = MediaProbe.probe(fileSource)
+        if (probed == null) {
+            try {
+                copy.delete()
+            } catch (_: Throwable) {
+            }
+            LogStore.event("Video preparation failed: FFprobe could not decode the cached file")
+            throw VideoInputException(
+                VideoInputException.Kind.UNDECODABLE,
+                "Video preparation failed."
+            )
+        }
+        LogStore.event(
+            "FFmpeg probe successful: ${probed.width}x${probed.height} @ ${probed.fps} fps, " +
+                "${probed.durationMs} ms, video=${probed.videoCodec.ifEmpty { "?" }}, " +
+                "audio=${if (probed.hasAudio) probed.audioCodec.ifEmpty { "present" } else "none"}"
+        )
+        LogStore.event("FFmpeg input prepared: local cache file")
+        return LoadedVideo(fileSource, probed.withSizeFallback(copy.length()))
+    }
+
+    /** One-shot helper: inspect + prepare. */
+    fun load(
+        context: Context,
+        uri: Uri,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): LoadedVideo {
+        val inspection = inspect(context, uri)
+        return prepareForFFmpeg(context, uri, inspection, onProgress)
+    }
+
+    /** Deletes any temporary bridge copy (called after streaming stops). */
+    fun releaseTemporaryCopy(loaded: LoadedVideo?) {
+        val source = loaded?.source
+        if (source is InputSource.FileSource && source.deletable) {
+            try {
+                File(source.path).delete()
+                LogStore.event("Temporary video copy deleted")
+            } catch (t: Throwable) {
+                LogStore.event("Could not delete temporary copy: ${t.javaClass.simpleName}")
+            }
+        }
+    }
+
+    /**
+     * Removes leftover cache files from crashed/killed sessions. Call at app
+     * startup — but never while a stream is running.
+     */
+    fun purgeStaleCache(context: Context) {
+        try {
+            val dir = File(context.cacheDir, CACHE_DIR)
+            val files = dir.listFiles()
+            if (files != null && files.isNotEmpty()) {
+                files.forEach { it.delete() }
+                LogStore.event("Stale cache files removed: ${files.size}")
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun cacheDir(context: Context): File =
+        File(context.cacheDir, CACHE_DIR).apply { mkdirs() }
+
+    /**
+     * Buffered byte-for-byte copy from the content Uri into the private cache.
+     * Returns the cache file only when the copy is COMPLETE and verified.
+     */
+    /**
+     * Prepares every playlist item: reuses a verified existing cache copy when
+     * one exists, otherwise performs the byte-level bridge copy. Runs under
+     * the same single-flight lock as [prepareOnce].
+     */
+    suspend fun prepareBatch(
+        context: Context,
+        items: List<com.videolive.app.model.StreamItem>,
+        onItemProgress: ((index: Int, copied: Long, total: Long) -> Unit)? = null
+    ): List<LoadedVideo> = prepareMutex.withLock {
+        // Every copy belonging to THIS batch is protected from eviction until
+        // streaming starts (concat reads them one by one during the session).
+        val protectedFiles = mutableListOf<File>()
+        items.mapIndexed { index, item ->
+            val uri = Uri.parse(item.uri)
+            val dir = cacheDir(context)
+            val reused = if (item.sizeBytes > 0) {
+                CacheIndex.lookup(dir, item.uri, item.sizeBytes)
+            } else null
+            if (reused != null) {
+                protectedFiles += reused
+                LogStore.event(
+                    "Playlist item ${index + 1}: cache reused (${reused.length()} bytes) — no re-copy"
+                )
+                val fileSource = InputSource.FileSource(
+                    path = reused.absolutePath,
+                    displayName = item.displayName,
+                    sizeBytes = reused.length(),
+                    deletable = false
+                )
+                val probed = MediaProbe.probe(fileSource)
+                if (probed == null) {
+                    throw VideoInputException(
+                        VideoInputException.Kind.UNDECODABLE,
+                        "Video preparation failed."
+                    )
+                }
+                LoadedVideo(fileSource, probed)
+            } else {
+                val inspection = inspect(context, uri)
+                val loaded = withContext(Dispatchers.IO) {
+                    prepareForFFmpeg(context.applicationContext, uri, inspection) { c, t ->
+                        onItemProgress?.invoke(index, c, t)
+                    }
+                }
+                val src = loaded.source
+                if (src is InputSource.FileSource) {
+                    val copy = File(src.path)
+                    protectedFiles += copy
+                    CacheIndex.put(
+                        dir, item.uri, item.sizeBytes, copy, evictable = protectedFiles
+                    )
+                }
+                loaded
+            }
+        }
+    }
+
+    private fun copyToCache(
+        context: Context,
+        uri: Uri,
+        displayName: String,
+        expectedBytes: Long,
+        onProgress: ((Long, Long) -> Unit)?
+    ): File? {
+        return try {
+            val dir = cacheDir(context)
+            // NOTE: no directory wipe here — multiple playlist copies coexist;
+            // bounded eviction is owned by CacheIndex.
+
+            val safeName = displayName.replace(Regex("[^a-zA-Z0-9.\\-_ ]"), "_").take(60)
+            val target = File(dir, "stream_input_${System.currentTimeMillis()}_$safeName")
+            LogStore.event("Copying video to FFmpeg cache...")
+            LogStore.event("Cache file: ${target.absolutePath}")
+
+            var copied = 0L
+            var lastProgressAt = 0L
+            var lastLoggedPct = 0
+            val input = context.contentResolver.openInputStream(uri) ?: run {
+                LogStore.event("ContentResolver refused to open the URI")
+                return null
+            }
+            input.use { rawIn ->
+                BufferedInputStream(rawIn, BUFFER_SIZE).use { src ->
+                    FileOutputStream(target).use { dest ->
+                        val buffer = ByteArray(BUFFER_SIZE)
+                        while (true) {
+                            val read = src.read(buffer)
+                            if (read <= 0) break
+                            dest.write(buffer, 0, read)
+                            copied += read
+                            if (onProgress != null && copied - lastProgressAt >= 2_000_000L) {
+                                lastProgressAt = copied
+                                try {
+                                    onProgress(copied, expectedBytes)
+                                } catch (_: Throwable) {
+                                }
+                            }
+                            if (expectedBytes > 0) {
+                                val pct = ((copied * 100) / expectedBytes).toInt()
+                                if (pct >= lastLoggedPct + 25 && pct <= 100) {
+                                    lastLoggedPct = pct
+                                    LogStore.event("Copying video to FFmpeg cache... $pct%")
+                                }
+                            }
+                        }
+                        dest.flush()
+                        dest.fd.sync()
+                    }
+                }
+            }
+
+            // Completeness verification before FFmpeg ever sees this file.
+            if (!target.exists() || target.length() <= 0) {
+                LogStore.event("Cache copy failed: destination file missing or empty")
+                target.delete()
+                return null
+            }
+            if (expectedBytes > 0 && copied != expectedBytes) {
+                LogStore.event(
+                    "Cache copy INCOMPLETE: expected $expectedBytes bytes, got $copied — aborting"
+                )
+                target.delete()
+                return null
+            }
+            LogStore.event("Cache copy completed successfully: $copied bytes")
+            target
+        } catch (t: Throwable) {
+            LogStore.event("Cache bridge copy failed: ${t.javaClass.simpleName}: ${t.message}")
+            null
+        }
+    }
+
+    private fun looksLikeVideoMime(mime: String): Boolean {
+        val m = mime.lowercase()
+        return m.startsWith("video/") ||
+            m == "application/octet-stream" ||
+            m.contains("matroska") ||
+            m.contains("mp4") ||
+            m.contains("mpeg") ||
+            m.contains("avi")
+    }
+}
+
+private fun VideoInfo.withSizeFallback(size: Long): VideoInfo =
+    if (sizeBytes > 0) this else copy(sizeBytes = size)
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/model/StreamConfig.kt ==========
+package com.videolive.app.model
+
+import java.io.Serializable
+
+enum class Orientation { VERTICAL, HORIZONTAL }
+
+enum class LoopMode { ONE, ALL, SEQUENTIAL, SHUFFLE }
+
+enum class BitrateMode { AUTO, MANUAL }
+
+/** Encoder preference. AUTO probes the device and prefers the verified
+ * hardware path with an automatic software fallback. */
+enum class EncoderPref { AUTO, HARDWARE, SOFTWARE }
+
+/** Preview-studio framing. Applied to the encoder at stream start. */
+enum class FrameMode { FIT, FILL }
+
+enum class StopPolicy { STOP_AFTER_DURATION, CONTINUE_UNTIL_STOPPED }
+
+/** Output quality presets. The pair is the landscape (16:9) resolution;
+ * vertical streams swap width and height.
+ *
+ * Auto bitrates are conservative CBR targets suitable for YouTube Live.
+ * 4K is intentionally NOT offered: software H.264 encoding on phones
+ * cannot reliably sustain a real 4K live encode.
+ */
+enum class Quality(val label: String, val width: Int, val height: Int, val autoBitrateKbps: Int) {
+    Q360("360p", 640, 360, 1000),
+    Q480("480p", 854, 480, 1800),
+    Q720("720p", 1280, 720, 3500),
+    Q1080("1080p", 1920, 1080, 5500);
+
+    fun outputSize(orientation: Orientation): Pair<Int, Int> =
+        if (orientation == Orientation.VERTICAL) height to width else width to height
+
+    companion object {
+        fun fromLabel(label: String): Quality = values().firstOrNull { it.label == label } ?: Q720
+    }
+}
+
+/** One playlist entry (metadata only; the byte-level cache copy is prepared
+ * by the service right before streaming and reused across items). */
+data class StreamItem(
+    val uri: String,
+    val displayName: String,
+    val sizeBytes: Long,
+    val durationMs: Long = 0L,
+    val width: Int = 0,
+    val height: Int = 0,
+    val fps: Int = 0,
+    val hasAudio: Boolean = true,
+    val videoCodec: String = "",
+    val audioCodec: String = ""
+) : Serializable
+
+/**
+ * Everything needed to start a stream except the stream key.
+ * The key is read from encrypted storage by the service and is never
+ * passed through intents, logs or notifications.
+ */
+data class StreamConfig(
+    val videoUri: String,
+    val videoName: String,
+    val hasAudio: Boolean,
+    val orientation: Orientation,
+    val quality: Quality,
+    val fps: Int,
+    val bitrateMode: BitrateMode,
+    val manualBitrateKbps: Int,
+    val videoVolumePct: Int,
+    val micOn: Boolean,
+    val loopMode: LoopMode,
+    val fullUrlMode: Boolean,
+    val serverUrl: String,
+    val fullUrl: String,
+    // Phase 3-9 additions (all defaulted so the single-video path is unchanged).
+    val items: List<StreamItem> = emptyList(),
+    val sessionDurationHours: Int = 0,
+    val stopPolicy: StopPolicy = StopPolicy.CONTINUE_UNTIL_STOPPED,
+    val frameMode: FrameMode = FrameMode.FIT,
+    val zoomPct: Int = 100,
+    val panXPct: Int = 0,
+    val panYPct: Int = 0,
+    val micVolumePct: Int = 100,
+    val encoderPref: EncoderPref = EncoderPref.AUTO
+) : Serializable {
+
+    fun targetBitrateKbps(): Int = when (bitrateMode) {
+        BitrateMode.MANUAL -> manualBitrateKbps.coerceIn(200, 20_000)
+        BitrateMode.AUTO -> quality.autoBitrateKbps
+    }
+
+    fun outputSize(): Pair<Int, Int> = quality.outputSize(orientation)
+
+    /** True when a multi-item playlist session should be used. */
+    val isPlaylist: Boolean get() = items.size > 1 && loopMode != LoopMode.ONE
+}
+
+/** Probed information about the selected local video. */
+data class VideoInfo(
+    val durationMs: Long,
+    val width: Int,
+    val height: Int,
+    val fps: Int,
+    val hasAudio: Boolean,
+    val sizeBytes: Long,
+    val videoCodec: String,
+    val audioCodec: String
+)
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/net/RtmpProbe.kt ==========
+package com.videolive.app.net
+
+import com.videolive.app.ffmpeg.LogStore
+import java.io.InputStream
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.security.SecureRandom
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+
+/**
+ * Real, staged reachability test for an RTMP/RTMPS destination.
+ *
+ * Steps (each one fails fast with its exact reason):
+ *   1. URL parse        — scheme rtmp(s)://, host, explicit port preserved
+ *   2. DNS              — host actually resolves
+ *   3. TCP              — real socket connect within the timeout
+ *   4. TLS              — only for rtmps://; full TLS handshake
+ *   5. RTMP handshake   — C0+C1 sent, S0+S1+S2 read, C2 echo sent.
+ *
+ * The stream KEY is never part of this test (the handshake does not need it),
+ * so it cannot leak here. The test never starts the encoder.
+ *
+ * Note: the RTMP connect/publish round-trip happens later inside FFmpeg when
+ * the stream starts; a successful handshake proves the ingest server is
+ * reachable and speaks RTMP(S).
+ */
+object RtmpProbe {
+
+    data class StepResult(
+        val name: String,
+        val ok: Boolean,
+        val detail: String,
+        val ms: Long
+    )
+
+    data class Result(val steps: List<StepResult>, val failedAt: String?) {
+        val success: Boolean get() = failedAt == null
+        fun report(): String = steps.joinToString("\n") { s ->
+            (if (s.ok) "✓ " else "✗ ") + s.name +
+                (if (s.detail.isNotEmpty()) " — " + s.detail else "") +
+                " (${s.ms} ms)"
+        }
+    }
+
+    private const val DEFAULT_TIMEOUT_MS = 10_000
+
+    fun probe(destinationUrl: String, timeoutMs: Int = DEFAULT_TIMEOUT_MS): Result {
+        val steps = mutableListOf<StepResult>()
+        var failedAt: String? = null
+
+        fun step(name: String, ok: Boolean, detail: String, startedAt: Long): Boolean {
+            val ms = System.currentTimeMillis() - startedAt
+            steps.add(StepResult(name, ok, detail, ms))
+            LogStore.event(
+                "Destination test ${if (ok) "OK" else "FAILED"}: $name" +
+                    if (detail.isNotEmpty()) " — $detail" else ""
+            )
+            if (!ok && failedAt == null) failedAt = name
+            return ok
+        }
+
+        // 1) URL parse.
+        var t = System.currentTimeMillis()
+        val secure = destinationUrl.startsWith("rtmps://")
+        val validScheme = secure || destinationUrl.startsWith("rtmp://")
+        val rest = destinationUrl.substringAfter("://", "")
+        val hostPort = rest.substringBefore('/')
+        val host = hostPort.substringBefore(':').trim()
+        val explicitPort = hostPort.substringAfter(':', "").toIntOrNull()
+        val port = explicitPort ?: if (secure) 443 else 1935
+        if (!validScheme || host.isEmpty()) {
+            step("URL parse", false, "Not a valid rtmp:// or rtmps:// URL", t)
+            return Result(steps, failedAt)
+        }
+        step(
+            "URL parse", true,
+            "${if (secure) "rtmps" else "rtmp"}://$host:$port" +
+                (if (explicitPort != null) " (explicit port preserved)" else ""),
+            t
+        )
+
+        var socket: Socket? = null
+        try {
+            // 2) DNS.
+            t = System.currentTimeMillis()
+            val address = try {
+                InetAddress.getByName(host)
+            } catch (ex: Throwable) {
+                step("DNS lookup", false, "Cannot resolve $host: ${ex.javaClass.simpleName}", t)
+                return Result(steps, failedAt)
+            }
+            step("DNS lookup", true, "$host -> ${address.hostAddress}", t)
+
+            // 3) TCP.
+            t = System.currentTimeMillis()
+            socket = Socket()
+            try {
+                socket.connect(InetSocketAddress(address, port), timeoutMs)
+            } catch (ex: Throwable) {
+                step("TCP connection", false, "$host:$port — ${ex.javaClass.simpleName}: ${ex.message}", t)
+                return Result(steps, failedAt)
+            }
+            step("TCP connection", true, "connected to $host:$port", t)
+            socket.soTimeout = timeoutMs
+
+            var ioSocket: Socket = socket
+
+            // 4) TLS (rtmps only).
+            if (secure) {
+                t = System.currentTimeMillis()
+                try {
+                    val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
+                    val tls = factory.createSocket(socket, host, port, true) as SSLSocket
+                    tls.useClientMode = true
+                    tls.startHandshake()
+                    val session = tls.session
+                    step("TLS handshake", true, "${session.protocol} / ${session.cipherSuite}", t)
+                    ioSocket = tls
+                } catch (ex: Throwable) {
+                    step("TLS handshake", false, "${ex.javaClass.simpleName}: ${ex.message}", t)
+                    return Result(steps, failedAt)
+                }
+            }
+
+            // 5) RTMP handshake: C0+C1 -> S0+S1+S2 -> C2.
+            t = System.currentTimeMillis()
+            try {
+                val out = ioSocket.getOutputStream()
+                val ins = ioSocket.getInputStream()
+
+                out.write(0x03) // C0: RTMP version 3
+                val c1 = ByteArray(1536)
+                SecureRandom().nextBytes(c1)
+                // C1 header: timestamp=0, zero field=0 (simple handshake).
+                for (i in 0..7) c1[i] = 0
+                out.write(c1)
+                out.flush()
+
+                val s0 = ins.read()
+                if (s0 < 0) {
+                    step("RTMP handshake", false, "server closed the connection", t)
+                    return Result(steps, failedAt)
+                }
+                if (s0 != 3) {
+                    step("RTMP handshake", false, "unexpected server version byte $s0", t)
+                    return Result(steps, failedAt)
+                }
+                val s1 = ByteArray(1536)
+                readFully(ins, s1)
+                val s2 = ByteArray(1536)
+                readFully(ins, s2)
+                // C2 = echo of S1 completes the handshake.
+                out.write(s1)
+                out.flush()
+                step("RTMP handshake", true, "C0C1 sent, S0S1S2 received, C2 echoed", t)
+            } catch (ex: Throwable) {
+                step("RTMP handshake", false, "${ex.javaClass.simpleName}: ${ex.message}", t)
+                return Result(steps, failedAt)
+            }
+
+            return Result(steps, null)
+        } finally {
+            try {
+                socket?.close()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun readFully(ins: InputStream, buffer: ByteArray) {
+        var off = 0
+        while (off < buffer.size) {
+            val n = ins.read(buffer, off, buffer.size - off)
+            if (n < 0) throw java.io.EOFException("server closed the connection mid-handshake")
+            off += n
+        }
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/stream/MicMixer.kt ==========
+package com.videolive.app.stream
+
+import android.annotation.SuppressLint
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import com.videolive.app.ffmpeg.LogStore
+import java.io.FileNotFoundException
+import java.io.IOException
+import java.io.RandomAccessFile
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Captures microphone audio and writes 16-bit PCM into an FFmpegKit named pipe
+ * (a real FIFO on disk). FFmpeg consumes it as a second input and mixes it with
+ * the video's own audio using the amix filter — the video audio is never muted
+ * by microphone handling. Muting the mic simply writes silence at the same
+ * real-time pace so the pipeline never stalls.
+ */
+object MicMixer {
+
+    private const val SAMPLE_RATE = 44100
+
+    @Volatile var muted: Boolean = false
+
+    /** Approximate live input level 0-100 for the dashboard (UI only). */
+    @Volatile var levelPct: Int = 0
+        private set
+
+    private val running = AtomicBoolean(false)
+    @Volatile private var pipePath: String? = null
+    @Volatile private var recorder: AudioRecord? = null
+    private var thread: Thread? = null
+
+    /** Creates the recorder synchronously so the caller knows immediately if the mic is unusable. */
+    @SuppressLint("MissingPermission")
+    fun start(path: String): Boolean {
+        if (running.get()) {
+            pipePath = path
+            return true
+        }
+        val minBuf = try {
+            AudioRecord.getMinBufferSize(
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT
+            )
+        } catch (t: Throwable) {
+            -1
+        }
+        if (minBuf <= 0) return false
+
+        val rec = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                minBuf * 2
+            )
+        } catch (t: Throwable) {
+            null
+        }
+        if (rec == null || rec.state != AudioRecord.STATE_INITIALIZED) {
+            try {
+                rec?.release()
+            } catch (_: Throwable) {
+            }
+            return false
+        }
+        recorder = rec
+        pipePath = path
+        running.set(true)
+        thread = Thread({ loop() }, "MicMixer").also { it.start() }
+        LogStore.event("Microphone capture started (44.1 kHz PCM)")
+        return true
+    }
+
+    /** Points the writer at a freshly registered pipe (used on controlled reconnects). */
+    fun switchPipe(path: String) {
+        pipePath = path
+    }
+
+    fun stop() {
+        running.set(false)
+        // The worker thread releases the recorder itself.
+        thread = null
+    }
+
+    private fun loop() {
+        val rec = recorder ?: return
+        try {
+            rec.startRecording()
+        } catch (t: Throwable) {
+            LogStore.event("AudioRecord failed to start; mic will send silence")
+        }
+        var zeroMode = rec.recordingState != AudioRecord.RECORDSTATE_RECORDING
+        var failStreak = 0
+        val buf = ByteArray(4096)
+
+        while (running.get()) {
+            val path = pipePath
+            if (path == null) {
+                sleep(100)
+                continue
+            }
+            var raf: RandomAccessFile? = null
+            try {
+                // O_RDWR on the FIFO: opens instantly and lets us pace the writes.
+                raf = RandomAccessFile(path, "rw")
+                while (running.get()) {
+                    val n: Int
+                    if (zeroMode) {
+                        buf.fill(0)
+                        n = buf.size
+                        sleep(45) // ~4096 bytes at 44.1 kHz stereo16 ≈ 46 ms
+                    } else {
+                        n = rec.read(buf, 0, buf.size)
+                        if (n <= 0) {
+                            failStreak++
+                            if (failStreak > 5) {
+                                zeroMode = true
+                                LogStore.event("Microphone capture lost; keeping stream alive with silence")
+                            }
+                            continue
+                        }
+                        failStreak = 0
+                        if (muted) {
+                            levelPct = 0
+                            buf.fill(0, 0, n)
+                        } else {
+                            levelPct = rmsPercent(buf, n)
+                        }
+                    }
+                    raf.write(buf, 0, n)
+                }
+            } catch (e: FileNotFoundException) {
+                sleep(200) // pipe not registered yet, retry
+            } catch (e: IOException) {
+                sleep(150) // reader (FFmpeg) closed the pipe; wait for the next one
+            } catch (t: Throwable) {
+                sleep(200)
+            } finally {
+                try {
+                    raf?.close()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+
+        try {
+            rec.stop()
+        } catch (_: Throwable) {
+        }
+        try {
+            rec.release()
+        } catch (_: Throwable) {
+        }
+        recorder = null
+    }
+
+    private fun sleep(ms: Long) {
+        try {
+            Thread.sleep(ms)
+        } catch (_: InterruptedException) {
+        }
+    }
+
+    /** Rough RMS of 16-bit LE PCM mapped to 0-100 for display. */
+    private fun rmsPercent(buf: ByteArray, n: Int): Int {
+        var sum = 0L
+        var count = 0
+        var i = 0
+        while (i + 1 < n) {
+            val sample = ((buf[i + 1].toInt() shl 8) or (buf[i].toInt() and 0xFF)).toShort()
+            sum += sample.toLong() * sample.toLong()
+            count++
+            i += 2
+        }
+        if (count == 0) return 0
+        val rms = Math.sqrt(sum.toDouble() / count)
+        return ((rms / 32768.0) * 250.0).toInt().coerceIn(0, 100)
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/stream/StreamService.kt ==========
+package com.videolive.app.stream
+
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.net.Uri
+import android.os.BatteryManager
+import android.os.Build
+import android.os.IBinder
+import android.os.PowerManager
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import com.arthenica.ffmpegkit.FFmpegKitConfig
+import com.videolive.app.MainActivity
+import com.videolive.app.R
+import com.videolive.app.data.SecurePrefs
+import com.videolive.app.data.VideoRepository
+import com.videolive.app.ffmpeg.ErrorKind
+import com.videolive.app.ffmpeg.FFmpegCommandBuilder
+import com.videolive.app.ffmpeg.FFmpegManager
+import com.videolive.app.ffmpeg.FFmpegRuntime
+import com.videolive.app.ffmpeg.LogStore
+import com.videolive.app.ffmpeg.RunResult
+import com.videolive.app.data.SettingsRepository
+import com.videolive.app.media.LoadedVideo
+import com.videolive.app.media.VideoLoader
+import com.videolive.app.model.LoopMode
+import com.videolive.app.model.StopPolicy
+import com.videolive.app.model.StreamConfig
+import com.videolive.app.util.Net
+import java.io.File
+import java.util.Locale
+import kotlin.coroutines.coroutineContext
+import kotlin.math.min
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Foreground service that owns the entire streaming pipeline.
+ *
+ * Stability design:
+ *  - ONE FFmpeg session loops the video with -stream_loop -1; the RTMP output is
+ *    opened once and is never closed at a loop boundary.
+ *  - Reconnects happen ONLY on real network/RTMP failures or watchdog stalls,
+ *    with exponential backoff and a retry budget.
+ *  - A partial WakeLock keeps the CPU encode running while the screen is locked.
+ */
+class StreamService : Service() {
+
+    companion object {
+        const val ACTION_START = "com.videolive.app.action.START_STREAM"
+        const val ACTION_STOP = "com.videolive.app.action.STOP_STREAM"
+        const val EXTRA_CONFIG = "stream_config"
+        const val EXTRA_PROJECT_ID = "project_id"
+        const val CHANNEL_ID = "vl_live_channel"
+        private const val NOTIFICATION_ID = 1001
+        private const val MAX_ATTEMPTS = 5
+        private const val WATCHDOG_STALL_MS = 30_000L
+        private const val CONNECT_TIMEOUT_MS = 15_000L
+
+        // Markers in FFmpeg output that mean the RTMP/network layer failed.
+        private val RTMP_FAILURE_MARKERS = listOf(
+            "failed to connect", "connection refused", "connection reset",
+            "connection timed out", "operation timed out", "broken pipe",
+            "network is unreachable", "host not found", "could not resolve",
+            "handshake failed", "i/o error", "input/output error",
+            "server error", "not authorized", "access denied", "403",
+            "tls error", "ssl error", "connection ended", "error writing"
+        )
+
+        val uiState = MutableStateFlow(StreamUiState())
+
+        @Volatile
+        var isStreaming = false
+            private set
+
+        /** Last config used, so the Live screen can offer a Retry on ERROR. */
+        @Volatile
+        private var lastConfig: StreamConfig? = null
+        private var lastProjectId: String? = null
+
+        fun start(context: Context, config: StreamConfig, projectId: String? = lastProjectId) {
+            lastProjectId = projectId
+            val intent = Intent(context, StreamService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_CONFIG, config)
+                .putExtra(EXTRA_PROJECT_ID, projectId)
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        /** Restarts the last attempted stream (used by the Retry action). */
+        fun retry(context: Context): Boolean {
+            val config = lastConfig ?: return false
+            // A retry is a NEW session — give it its own log session id.
+            LogStore.startSession()
+            start(context, config)
+            return true
+        }
+
+        fun stop(context: Context) {
+            context.startService(Intent(context, StreamService::class.java).setAction(ACTION_STOP))
+        }
+
+        /** Skips the current reconnect backoff wait and retries immediately. */
+        fun requestRetryNow() {
+            LogStore.event("Retry Now requested by user")
+            retryNowFlag = true
+        }
+
+        @Volatile
+        private var retryNowFlag = false
+
+        internal fun consumeRetryNow(): Boolean {
+            val v = retryNowFlag
+            retryNowFlag = false
+            return v
+        }
+
+        internal fun retryNowPending(): Boolean = retryNowFlag
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val ffmpeg = FFmpegManager()
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var streamJob: Job? = null
+    private var tickerJob: Job? = null
+
+    @Volatile private var stopRequested = false
+    @Volatile private var retryNowRequested = false
+    private var startedAt = 0L
+    @Volatile private var lastProgressAt = System.currentTimeMillis()
+
+    // Per-FFmpeg-session evidence flags.
+    @Volatile private var everConnected = false
+    @Volatile private var connectTimedOut = false
+    @Volatile private var liveNotified = false
+
+    // Diagnostics: measured output cadence (frame delta over time delta).
+    private var prevStatFrames = 0L
+    private var prevStatTimeMs = 0L
+    @Volatile private var measuredFps = 0f
+    @Volatile private var softStallWarned = false
+    private var overloadStreak = 0
+    private var overloadWarned = false
+
+    // Encoder selection (Stage 1): hardware when available+verified, with an
+    // automatic software fallback. encoderInUse is parsed from real FFmpeg
+    // output, never assumed.
+    @Volatile private var encoderInUse = ""
+
+    /** Stream project this session belongs to (null = legacy direct start). */
+    private var projectId: String? = null
+    @Volatile private var forceSoftware = false
+    private var attemptUsedHw = false
+
+    // Transport health: output bytes must grow while frames are encoded.
+    // Frames advancing with frozen byte counter = RTMPS writes blocked.
+    private var prevBytes = -1L
+
+    // Long-duration latency drift: wall-clock elapsed minus encoded out_time.
+    // If this grows, encode/transport runs slightly under real time — the
+    // classic cause of "fine at first, laggy after ~1 hour" streams.
+    private var attemptWallStartMs = 0L
+    private var driftWarned = false
+    private var driftCritical = false
+    private var prevBytesFrames = 0L
+    private var transportStallStreak = 0
+
+    /** Service-side mirror of the UI state (terminal notification text etc). */
+    @Volatile private var state = StreamUiState()
+
+    // Playlist session bookkeeping (Phase 3).
+    private var playlistMode = false
+    private var playlistDurations = LongArray(0)
+    private var playlistNames = emptyArray<String>()
+    private var totalPlaylistMs = 0L
+    @Volatile private var durationReached = false
+
+    // Thermal guard (Phase 7).
+    private lateinit var settingsRepo: SettingsRepository
+    @Volatile private var deviceTempC = 0.0
+    private var thermalWarnShown = false
+    @Volatile private var thermalCritFired = false
+    private var batteryReceiver: BroadcastReceiver? = null
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        createChannel()
+        settingsRepo = SettingsRepository(this)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_START -> {
+                if (isStreaming) {
+                    return START_NOT_STICKY
+                }
+                val config = extractConfig(intent)
+                if (config == null) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                lastConfig = config
+                projectId = intent.getStringExtra(EXTRA_PROJECT_ID) ?: lastProjectId
+                stopRequested = false
+                liveNotified = false
+                playlistMode = false
+                totalPlaylistMs = 0L
+                durationReached = false
+                thermalWarnShown = false
+                thermalCritFired = false
+                deviceTempC = 0.0
+                encoderInUse = ""
+                forceSoftware = false
+                startedAt = System.currentTimeMillis()
+                isStreaming = true
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    buildNotification(config.videoName),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+                acquireWakeLock()
+                startThermalMonitor()
+                streamJob?.cancel()
+                streamJob = scope.launch { runStream(config) }
+            }
+            ACTION_STOP -> requestStop()
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun extractConfig(intent: Intent): StreamConfig? = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getSerializableExtra(EXTRA_CONFIG, StreamConfig::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getSerializableExtra(EXTRA_CONFIG) as? StreamConfig
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
+    private fun requestStop() {
+        if (!isStreaming && streamJob?.isActive != true) {
+            stopSelf()
+            return
+        }
+        stopRequested = true
+        post { it.copy(phase = Phase.STOPPING, statusText = "Stopping...") }
+        LogStore.event("Stop requested by user")
+        MicMixer.stop()
+        ffmpeg.cancelCurrent()
+    }
+
+    private suspend fun runStream(config: StreamConfig) {
+        var pipePath: String? = null
+        // Defensive: a session id must exist so every event of this run is
+        // traceable under one tag (normally started by the START LIVE tap).
+        if (!LogStore.hasSession()) LogStore.startSession()
+        LogStore.event("START LIVE requested")
+        post {
+            StreamUiState(
+                phase = Phase.PREPARING,
+                statusText = "Preparing...",
+                videoName = config.videoName,
+                outWidth = config.outputSize().first,
+                outHeight = config.outputSize().second,
+                fps = config.fps,
+                configuredBitrateKbps = config.targetBitrateKbps(),
+                hasVideoAudio = config.hasAudio,
+                volumePct = config.videoVolumePct
+            )
+        }
+        startTicker()
+        try {
+            val key = SecurePrefs.getStreamKey(this).orEmpty()
+            if (key.isBlank() && !config.fullUrlMode) {
+                LogStore.event("Startup aborted: stream key is empty")
+                failNow("Please enter your YouTube Stream Key.")
+                return
+            }
+            val destination = FFmpegCommandBuilder.buildDestinationUrl(
+                config.fullUrlMode, config.serverUrl, config.fullUrl, key
+            )
+            if (destination == null) {
+                LogStore.event("Startup aborted: RTMP destination URL is malformed")
+                failNow("Please enter a valid RTMP/RTMPS server URL and Stream Key (no spaces).")
+                return
+            }
+            // Sanitize masks the path (stream key) of rtmp(s) URLs.
+            LogStore.event("RTMP destination validated: $destination")
+
+            // One-time, background capability probe: is a hardware H.264
+            // encoder even packaged? (evidence for the hw-encoder question)
+            withContext(Dispatchers.IO) { FFmpegRuntime.logEncoderCapabilities() }
+            val hwPresent = withContext(Dispatchers.IO) { FFmpegRuntime.hasHardwareH264() }
+            LogStore.event(
+                "Encoder preference: ${config.encoderPref} | hardware H.264 present: $hwPresent"
+            )
+
+            // loadOnce / prepareBatch are single-flight: even if something else
+            // is preparing right now, this waits and reuses the result — a
+            // second cache copy can never start.
+            val loadedList: List<LoadedVideo> = if (config.isPlaylist) {
+                LogStore.event(
+                    "Preparing playlist: ${config.items.size} items " +
+                        "(cache reuse enabled, mode=${config.loopMode})"
+                )
+                try {
+                    VideoLoader.prepareBatch(this@StreamService, config.items)
+                } catch (e: com.videolive.app.media.VideoInputException) {
+                    LogStore.event("Startup aborted: playlist preparation failed")
+                    failNow(e.message ?: "Unable to read one of the playlist videos.")
+                    return
+                } catch (t: Throwable) {
+                    LogStore.event("Startup aborted: playlist preparation crashed (${t.javaClass.simpleName})")
+                    failNow("Unable to read one of the playlist videos.")
+                    return
+                }
+            } else {
+                listOf(
+                    VideoRepository.current?.takeIf { it.source.displayName == config.videoName }
+                        ?: try {
+                            VideoLoader.loadOnce(this@StreamService, Uri.parse(config.videoUri))
+                        } catch (e: com.videolive.app.media.VideoInputException) {
+                            LogStore.event("Startup aborted: input preparation failed")
+                            failNow(e.message ?: "Unable to read this video.")
+                            return
+                        } catch (t: Throwable) {
+                            LogStore.event("Startup aborted: input preparation crashed (${t.javaClass.simpleName})")
+                            failNow("Unable to read this video.")
+                            return
+                        }
+                )
+            }
+
+            playlistMode = config.isPlaylist && loadedList.size > 1
+            if (playlistMode) {
+                // Seamless concat requires identical codec params across items.
+                val first = loadedList.first().info
+                val uniform = loadedList.all {
+                    it.info.videoCodec == first.videoCodec &&
+                        it.info.width == first.width &&
+                        it.info.height == first.height &&
+                        it.info.hasAudio == first.hasAudio &&
+                        (!first.hasAudio || it.info.audioCodec == first.audioCodec)
+                }
+                if (!uniform) {
+                    failNow(
+                        "Playlist videos must share the same codec, resolution and audio " +
+                            "layout for seamless playback. Re-encode mismatched items to match."
+                    )
+                    return
+                }
+                loadedList.forEachIndexed { i, lv ->
+                    LogStore.event(
+                        "Playlist item ${i + 1}: ${lv.info.width}x${lv.info.height}, " +
+                            "${lv.info.fps} fps, ${lv.info.durationMs / 1000}s, " +
+                            "audio=${if (lv.info.hasAudio) "yes" else "no"} " +
+                            (if (lv.source.isTemporaryCopy) "(cache bridge copy)" else "(direct read)")
+                    )
+                }
+            } else {
+                VideoRepository.current = loadedList.first()
+            }
+
+            val loaded = loadedList.first()
+            val info = loaded.info
+            LogStore.event(
+                "Input prepared: " +
+                    (if (loaded.source.isTemporaryCopy) "cache bridge copy" else "direct read") +
+                    " | ${info.width}x${info.height}, ${info.fps} fps, " +
+                    "duration ${info.durationMs / 1000}s, audio=${if (info.hasAudio) "yes" else "no"}"
+            )
+            LogStore.event(
+                "Output plan: H.264 + AAC -> FLV -> RTMP, " +
+                    "${config.outputSize().first}x${config.outputSize().second} @ ${config.fps} fps, " +
+                    "${config.targetBitrateKbps()} kbps, " +
+                    (if (playlistMode) "playlist=${loadedList.size} items (${config.loopMode})"
+                    else "loop=in-engine (-stream_loop -1)")
+            )
+
+            // Playlist playback order: shuffle once per session; reconnects
+            // always resume the same order.
+            val playOrder: List<Int> =
+                if (playlistMode && config.loopMode == LoopMode.SHUFFLE) loadedList.indices.shuffled()
+                else loadedList.indices.toList()
+            if (playlistMode) {
+                playlistDurations = LongArray(playOrder.size) { loadedList[playOrder[it]].info.durationMs }
+                playlistNames = playOrder.map { loadedList[it].source.displayName }.toTypedArray()
+                totalPlaylistMs = playlistDurations.sum()
+                LogStore.event(
+                    "Playlist total duration: ${totalPlaylistMs / 60000} min, " +
+                        "policy=${config.stopPolicy}" +
+                        (if (config.stopPolicy == StopPolicy.STOP_AFTER_DURATION)
+                            " after ${config.sessionDurationHours}h" else "")
+                )
+            }
+
+            // Microphone setup (only when requested).
+            var micActive = config.micOn
+            if (micActive) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                    != PackageManager.PERMISSION_GRANTED
+                ) {
+                    LogStore.event("Microphone permission missing — continuing without mic")
+                    micActive = false
+                } else {
+                    val initialPipe = withContext(Dispatchers.IO) {
+                        FFmpegKitConfig.registerNewFFmpegPipe(this@StreamService)
+                    }
+                    micActive = MicMixer.start(initialPipe)
+                    if (micActive) {
+                        pipePath = initialPipe
+                    } else {
+                        safeClosePipe(initialPipe)
+                        pipePath = null
+                        LogStore.event("Microphone unavailable — continuing with video audio only")
+                    }
+                }
+            }
+            post { it.copy(micActive = micActive) }
+
+            var attempt = 0
+            while (!stopRequested) {
+                // Retry Now is one-shot: clear it once a new attempt begins.
+                consumeRetryNow()
+                // Network gate: don't burn retries while the radio is simply down.
+                if (!Net.isOnline(this)) {
+                    attempt++
+                    if (attempt > MAX_ATTEMPTS) {
+                        failNow("Internet connection lost. Could not recover the stream.")
+                        return
+                    }
+                    post {
+                        it.copy(
+                            phase = Phase.RECONNECTING,
+                            statusText = "Network problem...",
+                            attempt = attempt
+                        )
+                    }
+                    LogStore.event("Network unavailable — waiting ($attempt/$MAX_ATTEMPTS)")
+                    stoppableDelay(backoffMs(attempt))
+                    continue
+                }
+
+                post {
+                    it.copy(
+                        phase = Phase.CONNECTING,
+                        statusText = if (attempt == 0) "Connecting to YouTube..."
+                        else "Reconnecting $attempt/$MAX_ATTEMPTS...",
+                        attempt = attempt,
+                        liveFps = 0f,
+                        liveBitrateKbps = 0,
+                        speed = 0.0
+                    )
+                }
+
+                // Fresh mic pipe for every new RTMP session.
+                if (attempt > 0 && micActive) {
+                    pipePath?.let { safeClosePipe(it) }
+                    val freshPipe = withContext(Dispatchers.IO) {
+                        FFmpegKitConfig.registerNewFFmpegPipe(this@StreamService)
+                    }
+                    pipePath = freshPipe
+                    MicMixer.switchPipe(freshPipe)
+                }
+
+                val useHw = when (config.encoderPref) {
+                    com.videolive.app.model.EncoderPref.SOFTWARE -> false
+                    com.videolive.app.model.EncoderPref.HARDWARE -> hwPresent
+                    com.videolive.app.model.EncoderPref.AUTO -> hwPresent && !forceSoftware
+                }
+                attemptUsedHw = useHw
+                LogStore.event(
+                    "Encoder selected for this attempt: " +
+                        if (useHw) "h264_mediacodec (hardware)" else "libx264 (software)"
+                )
+
+                val args: List<String> = if (playlistMode) {
+                    // Concat demuxer list for this session's play order. The
+                    // list file lives next to the cache copies; it is rebuilt
+                    // on every attempt so a reconnect replays from the start
+                    // of the ordered list.
+                    val concatFile = File(cacheDir, "playlist_concat.txt")
+                    withContext(Dispatchers.IO) {
+                        concatFile.writeText(buildString {
+                            playOrder.forEach { i ->
+                                append("file '").append(loadedList[i].source.ffmpegInput).append("'\n")
+                            }
+                        })
+                    }
+                    FFmpegCommandBuilder.buildPlaylist(
+                        config,
+                        info.hasAudio,
+                        concatFile,
+                        destination,
+                        if (micActive) pipePath else null,
+                        useHw
+                    )
+                } else {
+                    FFmpegCommandBuilder.build(
+                        config,
+                        info,
+                        loaded.source.ffmpegInput,
+                        destination,
+                        if (micActive) pipePath else null,
+                        useHw
+                    )
+                }
+                // Full command for diagnostics — destination (contains the stream
+                // key) is replaced before logging; Sanitize masks it anyway.
+                val maskedCommand = args.joinToString(" ") {
+                    if (it == destination) "${destination.substringBefore("://")}://<hidden-key>" else it
+                }
+                LogStore.event("FFmpeg command: $maskedCommand")
+                LogStore.event("FFmpeg session starting (attempt ${attempt + 1})")
+                LogStore.event("Connecting to RTMP server...")
+
+                // Reset per-session evidence flags.
+                everConnected = false
+                connectTimedOut = false
+                prevStatFrames = 0
+                prevStatTimeMs = 0
+                measuredFps = 0f
+                softStallWarned = false
+                overloadStreak = 0
+                overloadWarned = false
+                prevBytes = -1L
+                prevBytesFrames = 0L
+                transportStallStreak = 0
+                attemptWallStartMs = 0L
+                driftWarned = false
+                driftCritical = false
+                var statsSeen = 0
+                var inputLogged = false
+                var encoderLogged = false
+                var muxerLogged = false
+                var rtmpFailureLogged = false
+                val stageOnLog: (String) -> Unit = { line ->
+                    val l = line.lowercase()
+                    if (!inputLogged && l.contains("input #")) {
+                        inputLogged = true
+                        LogStore.event("FFmpeg opened the input successfully")
+                    }
+                    if (!encoderLogged && l.contains("stream #") && l.contains("->")) {
+                        encoderLogged = true
+                        LogStore.event("Encoder initialized (H.264/AAC mapping active)")
+                    }
+                    // Verified encoder: parsed from the REAL output mapping
+                    // line ("Video: h264 (h264_mediacodec)" / "(libx264)").
+                    if (encoderInUse.isEmpty() && l.contains("video:")) {
+                        val name = when {
+                            l.contains("h264_mediacodec") -> "h264_mediacodec (hardware)"
+                            l.contains("libx264") -> "libx264 (software)"
+                            else -> ""
+                        }
+                        if (name.isNotEmpty()) {
+                            encoderInUse = name
+                            LogStore.event("Encoder in use (verified from output): $name")
+                            post { s -> s.copy(encoderName = name) }
+                        }
+                    }
+                    if (!muxerLogged && l.contains("output #")) {
+                        muxerLogged = true
+                        LogStore.event("FLV muxer initialized")
+                        post {
+                            if (it.phase == Phase.CONNECTING || it.phase == Phase.PREPARING) {
+                                it.copy(phase = Phase.ENCODING, statusText = "Encoder started...")
+                            } else it
+                        }
+                    }
+                    if (!rtmpFailureLogged && RTMP_FAILURE_MARKERS.any { l.contains(it) }) {
+                        rtmpFailureLogged = true
+                        LogStore.event("Engine reported RTMP/network failure: ${line.trim().take(180)}")
+                    }
+                }
+
+                lastProgressAt = System.currentTimeMillis()
+                val sessionStartedAt = System.currentTimeMillis()
+                val watchdog = scope.launch { watchdogLoop(sessionStartedAt) }
+                val result = ffmpeg.run(args, stageOnLog) { st ->
+                    statsSeen++
+                    lastProgressAt = System.currentTimeMillis()
+
+                    // Measured output cadence (independent of FFmpeg's own fps
+                    // field): frame delta over out_time delta.
+                    val statFrames = st.videoFrameNumber.toLong()
+                    val statTimeMs = st.time.toLong()
+                    if (prevStatTimeMs > 0 && statTimeMs > prevStatTimeMs) {
+                        val dt = statTimeMs - prevStatTimeMs
+                        if (dt >= 500) {
+                            measuredFps = (statFrames - prevStatFrames) * 1000f / dt
+                            prevStatFrames = statFrames
+                            prevStatTimeMs = statTimeMs
+                        }
+                    } else if (prevStatTimeMs == 0L) {
+                        prevStatFrames = statFrames
+                        prevStatTimeMs = statTimeMs
+                    }
+
+                    // Transport check on the same window: encoded frames must
+                    // produce outgoing bytes (FLV over RTMPS). Frames advance
+                    // with a frozen byte counter = writes blocked/disconnected.
+                    val outBytes = st.size.toLong()
+                    if (prevBytes >= 0) {
+                        val framesAdvanced = statFrames > prevBytesFrames
+                        val bytesAdvanced = outBytes > prevBytes
+                        transportStallStreak =
+                            if (framesAdvanced && !bytesAdvanced) transportStallStreak + 1 else 0
+                        if (transportStallStreak == 2) {
+                            LogStore.event(
+                                "TRANSPORT STALL suspected: frames encoding but output bytes " +
+                                    "frozen at $outBytes — RTMPS write blocked or disconnected"
+                            )
+                        }
+                    }
+                    prevBytes = outBytes
+                    prevBytesFrames = statFrames
+
+                    // Cumulative latency drift — the long-duration lag signal.
+                    // A healthy real-time pipeline keeps out_time close to
+                    // wall-clock elapsed; growing drift means encode or
+                    // transport is under real time and stutter/latency will
+                    // only get worse the longer the session runs.
+                    val driftSec: Double = if (attemptWallStartMs == 0L) {
+                        attemptWallStartMs = System.currentTimeMillis()
+                        0.0
+                    } else {
+                        ((System.currentTimeMillis() - attemptWallStartMs) - statTimeMs) / 1000.0
+                    }
+                    if (driftSec >= 15.0 && !driftWarned) {
+                        driftWarned = true
+                        LogStore.event(
+                            "LATENCY DRIFT growing: output ${String.format(Locale.US, "%.0f", driftSec)}s " +
+                                "behind real time — encode/transport slightly under 1.0x; " +
+                                "long sessions from here will progressively degrade"
+                        )
+                    }
+                    if (driftSec >= 45.0 && !driftCritical) {
+                        driftCritical = true
+                        post { s ->
+                            s.copy(
+                                perfWarning = "Stream falling behind real time — stop and restart " +
+                                    "at 480p or lower FPS for long sessions."
+                            )
+                        }
+                        LogStore.event(
+                            "LATENCY DRIFT severe: ${String.format(Locale.US, "%.0f", driftSec)}s behind " +
+                                "real time. Continuing will keep increasing latency/stutter. " +
+                                "Recommendation: stop now, lower quality (480p) or FPS, restart."
+                        )
+                    }
+
+                    val healthLabel = when {
+                        transportStallStreak >= 2 -> "Transport stalled"
+                        driftCritical || overloadWarned ||
+                            (measuredFps > 0f && measuredFps < config.fps * 0.8f) ->
+                            "Performance warning"
+                        else -> "Healthy"
+                    }
+                    val loops: Int
+                    var itemName = config.videoName
+                    if (playlistMode && totalPlaylistMs > 0) {
+                        val loopAll = config.loopMode == LoopMode.ALL
+                        val pos = if (loopAll) st.time % totalPlaylistMs else st.time
+                        loops = if (loopAll) (st.time / totalPlaylistMs).toInt() else 0
+                        var cum = 0L
+                        var idx = playlistDurations.size - 1
+                        for (k in playlistDurations.indices) {
+                            cum += playlistDurations[k]
+                            if (pos < cum) {
+                                idx = k
+                                break
+                            }
+                        }
+                        itemName = playlistNames[idx]
+                    } else {
+                        loops = if (info.durationMs > 0) (st.time / info.durationMs).toInt() else 0
+                    }
+
+                    // Encode-overload detection (several signals, sustained):
+                    // measured cadence well below target WHILE encode speed is
+                    // under realtime means the device cannot keep up — report
+                    // it, never silently "fix" by restarting a healthy stream.
+                    if (measuredFps > 0f && st.speed > 0.0 &&
+                        measuredFps < config.fps * 0.8f && st.speed < 1.0
+                    ) {
+                        overloadStreak++
+                    } else {
+                        overloadStreak = 0
+                    }
+                    if (overloadStreak >= 10 && !overloadWarned) {
+                        overloadWarned = true
+                        post { s ->
+                            s.copy(
+                                perfWarning = "Encoding below real time — use 480p or a " +
+                                    "lower FPS for stable streaming on this device."
+                            )
+                        }
+                        LogStore.event(
+                            "ENCODE OVERLOAD suspected: measured " +
+                                "${String.format(Locale.US, "%.1f", measuredFps)} fps vs target " +
+                                "${config.fps}, speed ${String.format(Locale.US, "%.2f", st.speed)}x, " +
+                                "temp ${String.format(Locale.US, "%.1f", deviceTempC)}C. " +
+                                "This device cannot sustain ${config.quality.label}@${config.fps}fps — " +
+                                "for long sessions use 480p or 30 fps, and close heavy " +
+                                "background apps."
+                        )
+                    }
+
+                    // Phase 3: session duration limit — safe stop, never a crash.
+                    if (!durationReached && config.stopPolicy == StopPolicy.STOP_AFTER_DURATION &&
+                        config.sessionDurationHours > 0 &&
+                        st.time >= config.sessionDurationHours * 3600_000L
+                    ) {
+                        durationReached = true
+                        LogStore.event(
+                            "Session duration limit reached (${config.sessionDurationHours}h) — stopping safely"
+                        )
+                        stopRequested = true
+                        MicMixer.stop()
+                        ffmpeg.cancelCurrent()
+                    }
+
+                    // Phase 7: thermal guard on every stats tick.
+                    checkThermal()
+
+                    val netOk = Net.isOnline(this@StreamService)
+                    if (!everConnected) {
+                        everConnected = true
+                        // Everything below completes INSIDE the output open,
+                        // before the first frame is ever encoded — the first
+                        // statistic is the proof they all succeeded.
+                        LogStore.event("RTMP(S) transport established (TCP + TLS + RTMP handshake)")
+                        LogStore.event("RTMP connect command successful")
+                        LogStore.event("RTMP publish accepted by server")
+                        LogStore.event(
+                            "First video/audio packets transmitted to ingest " +
+                                "(frame #${st.videoFrameNumber}, ${st.bitrate.toInt()} kbps, " +
+                                "out_time ${st.time} ms, total ${st.size} bytes)"
+                        )
+                        post { s ->
+                            if (s.phase == Phase.STOPPING || s.phase == Phase.ERROR) s
+                            else s.copy(
+                                phase = Phase.PUBLISHING,
+                                statusText = "Publishing...",
+                                liveFps = st.videoFps,
+                                liveBitrateKbps = st.bitrate.toInt(),
+                                speed = st.speed,
+                                loopCount = loops,
+                                networkOk = netOk,
+                                videoName = config.videoName,
+                                playlistPosition = if (playlistMode) itemName else "",
+                                micLevelPct = MicMixer.levelPct,
+                                deviceTempC = deviceTempC,
+                                health = healthLabel
+                            )
+                        }
+                    } else {
+                        if (statsSeen == 2) {
+                            LogStore.event(
+                                "ENCODER STREAMING — packets flowing continuously. " +
+                                    "YouTube broadcast confirmation pending: check the " +
+                                    "YouTube Live Control Room preview (press GO LIVE if needed)."
+                            )
+                        }
+                        if (statsSeen % 30 == 0) {
+                            // Periodic diagnostic report (Advanced Logs).
+                            LogStore.event(
+                                "DIAG: target ${config.fps} fps | measured " +
+                                    "${String.format(Locale.US, "%.1f", measuredFps)} fps | " +
+                                    "engine ${st.videoFps} fps | bitrate ${st.bitrate.toInt()} kbps " +
+                                    "(target ${config.targetBitrateKbps()}) | speed " +
+                                    "${String.format(Locale.US, "%.2f", st.speed)}x | " +
+                                    "net=${if (netOk) "OK" else "POOR"} | reconnects=$attempt | " +
+                                    "temp=${String.format(Locale.US, "%.1f", deviceTempC)}C | " +
+                                    "drift=${String.format(Locale.US, "%.0f", driftSec)}s | " +
+                                    "frame #${st.videoFrameNumber}, out_time ${st.time} ms, " +
+                                    "total ${st.size} bytes, loop ${loops + 1}"
+                            )
+                        }
+                        post { s ->
+                            if (s.phase == Phase.STOPPING || s.phase == Phase.ERROR) s
+                            else {
+                                if (!netOk && s.networkOk) {
+                                    LogStore.event("Network condition: POOR — monitoring connection")
+                                }
+                                if (netOk && !s.networkOk) {
+                                    LogStore.event("Connection restored")
+                                }
+                                s.copy(
+                                    phase = Phase.STREAMING,
+                                    statusText = when {
+                                        !netOk -> "Network poor — monitoring..."
+                                        !s.networkOk -> "Connection restored"
+                                        else -> "Sending video to YouTube..."
+                                    },
+                                    liveFps = st.videoFps,
+                                    measuredFps = measuredFps,
+                                    liveBitrateKbps = st.bitrate.toInt(),
+                                    speed = st.speed,
+                                    loopCount = loops,
+                                    networkOk = netOk,
+                                    playlistPosition = if (playlistMode) itemName else "",
+                                    micLevelPct = MicMixer.levelPct,
+                                    deviceTempC = deviceTempC,
+                                    health = healthLabel
+                                )
+                            }
+                        }
+                        if (!liveNotified) {
+                            liveNotified = true
+                            refreshNotification(config.videoName, live = true)
+                        }
+                    }
+                }
+                watchdog.cancel()
+
+                if (stopRequested) break
+
+                if (thermalCritFired) {
+                    // failNow already posted ERROR and the engine was cancelled.
+                    break
+                }
+
+                if (connectTimedOut) {
+                    LogStore.event("ERROR: RTMP connection timed out after ${CONNECT_TIMEOUT_MS / 1000}s")
+                    failNow(
+                        "RTMP connection timed out. The server did not accept the " +
+                            "connection within ${CONNECT_TIMEOUT_MS / 1000} seconds. " +
+                            "Check your internet/firewall and try again."
+                    )
+                    return
+                }
+
+                val ranSeconds = (System.currentTimeMillis() - sessionStartedAt) / 1000
+                // A long healthy run resets the retry budget.
+                if (ranSeconds >= 60) attempt = 0
+
+                when (result) {
+                    is RunResult.Success -> {
+                        if (playlistMode && config.loopMode != LoopMode.ALL) {
+                            // Sequential/Shuffle playlists finish the list and the
+                            // concat demuxer exits cleanly — that is the intended
+                            // end of the session, not a failure.
+                            LogStore.event("Playlist finished after ${ranSeconds}s — ending session")
+                            post {
+                                it.copy(
+                                    phase = Phase.STOPPED,
+                                    statusText = "Playlist finished — stream ended",
+                                    elapsedMs = System.currentTimeMillis() - startedAt
+                                )
+                            }
+                            return
+                        }
+                        LogStore.event("FFmpeg exited cleanly after ${ranSeconds}s (unexpected)")
+                        attempt++
+                        if (attempt > MAX_ATTEMPTS) {
+                            failNow("Streaming engine exited repeatedly.")
+                            return
+                        }
+                        post {
+                            it.copy(
+                                phase = Phase.RECONNECTING,
+                                statusText = "Stream interrupted — restarting $attempt/$MAX_ATTEMPTS...",
+                                attempt = attempt
+                            )
+                        }
+                        stoppableDelay(backoffMs(attempt))
+                    }
+                    is RunResult.Cancelled -> {
+                        // A cancel here means the watchdog killed a stalled session.
+                        if (attemptUsedHw && ranSeconds < 20 && !forceSoftware) {
+                            forceSoftware = true
+                            LogStore.event(
+                                "Hardware encoder stalled early (${ranSeconds}s) — " +
+                                    "falling back to libx264 (software)."
+                            )
+                        }
+                        // Overload is not a transient fault: retrying the same
+                        // configuration would loop forever. Stop honestly and
+                        // recommend a sustainable configuration.
+                        if (overloadWarned && !attemptUsedHw) {
+                            failNow(
+                                "Encoding overload: this device cannot sustain " +
+                                    "${config.quality.label} @ ${config.fps} fps in real time. " +
+                                    "Restart with 480p or a lower FPS for a stable stream."
+                            )
+                            return
+                        }
+                        attempt++
+                        LogStore.event("Stream stalled — forcing reconnect ($attempt/$MAX_ATTEMPTS)")
+                        if (attempt > MAX_ATTEMPTS) {
+                            failNow("The stream kept stalling. Please try again.")
+                            return
+                        }
+                        post {
+                            it.copy(
+                                phase = Phase.RECONNECTING,
+                                statusText = "Reconnecting $attempt/$MAX_ATTEMPTS...",
+                                attempt = attempt
+                            )
+                        }
+                        stoppableDelay(backoffMs(attempt))
+                    }
+                    is RunResult.Failed -> {
+                        val err = result.error
+                        LogStore.event("FFmpeg failed: ${err.userMessage}")
+                        post { it.copy(lastError = err.userMessage) }
+                        if (attemptUsedHw && ranSeconds < 20 && !forceSoftware) {
+                            forceSoftware = true
+                            LogStore.event(
+                                "Hardware encoder attempt failed after ${ranSeconds}s — " +
+                                    "falling back to libx264 (software). Reason: ${err.userMessage}"
+                            )
+                        }
+                        if (err.kind == ErrorKind.AUTH || err.kind == ErrorKind.INPUT) {
+                            failNow(err.userMessage)
+                            return
+                        }
+                        attempt++
+                        if (attempt > MAX_ATTEMPTS) {
+                            failNow("${err.userMessage} (retry limit reached)")
+                            return
+                        }
+                        post {
+                            it.copy(
+                                phase = Phase.RECONNECTING,
+                                statusText = "Reconnecting $attempt/$MAX_ATTEMPTS — ${err.userMessage}",
+                                attempt = attempt
+                            )
+                        }
+                        stoppableDelay(backoffMs(attempt))
+                    }
+                }
+            }
+
+            if (!thermalCritFired) {
+                val stopText = when {
+                    durationReached -> "Duration limit reached — stream stopped safely"
+                    else -> "Live ended"
+                }
+                post { it.copy(phase = Phase.STOPPED, statusText = stopText) }
+                LogStore.event("Stream stopped cleanly")
+            }
+        } catch (t: Throwable) {
+            LogStore.event("Unexpected error: ${t.javaClass.simpleName}")
+            failNow("Unexpected error: ${t.javaClass.simpleName}")
+        } finally {
+            cleanup(pipePath)
+        }
+    }
+
+    private suspend fun watchdogLoop(sessionStartedAt: Long) {
+        while (coroutineContext.isActive) {
+            delay(2000)
+            if (stopRequested) continue
+            if (!everConnected) {
+                // Connection timeout: the RTMP output was not accepted within
+                // the budget. Stop the attempt cleanly instead of leaving the
+                // UI stuck on "Connecting..." forever.
+                val waited = System.currentTimeMillis() - sessionStartedAt
+                if (waited > CONNECT_TIMEOUT_MS) {
+                    connectTimedOut = true
+                    LogStore.event(
+                        "No connection established in ${CONNECT_TIMEOUT_MS / 1000}s — aborting attempt"
+                    )
+                    ffmpeg.cancelCurrent()
+                    return
+                }
+            } else {
+                val idleMs = System.currentTimeMillis() - lastProgressAt
+                // Soft stall: warn with ALL available signals before taking
+                // any action (avoids false positives from short fluctuations).
+                if (idleMs > 10_000 && !softStallWarned) {
+                    softStallWarned = true
+                    LogStore.event(
+                        "STALL WATCH: no progress ${idleMs / 1000}s | signals: " +
+                            "measured ${String.format(Locale.US, "%.1f", measuredFps)} fps, " +
+                            "temp ${String.format(Locale.US, "%.1f", deviceTempC)}C, " +
+                            "net=${if (Net.isOnline(this@StreamService)) "OK" else "DOWN"}, " +
+                            "mic=${if (MicMixer.levelPct > 0) "active" else "idle"} — monitoring"
+                    )
+                }
+                if (idleMs > WATCHDOG_STALL_MS) {
+                    LogStore.event(
+                        "STALL CONFIRMED: no encode progress for ${idleMs / 1000}s " +
+                            "(measured ${String.format(Locale.US, "%.1f", measuredFps)} fps, " +
+                            "temp ${String.format(Locale.US, "%.1f", deviceTempC)}C, " +
+                            "net=${if (Net.isOnline(this@StreamService)) "OK" else "DOWN"}) " +
+                            "— restarting engine"
+                    )
+                    ffmpeg.cancelCurrent()
+                    return
+                }
+            }
+        }
+    }
+
+    private fun failNow(message: String) {
+        post {
+            it.copy(
+                phase = Phase.ERROR,
+                statusText = message,
+                errorText = message,
+                lastError = message
+            )
+        }
+        LogStore.event("ERROR: $message")
+    }
+
+    // ---- Phase 7: thermal guard --------------------------------------------
+    // Temperature comes from the battery sensor (ACTION_BATTERY_CHANGED), in
+    // tenths of a degree. Thresholds are user-configurable in Settings; no
+    // values are invented here.
+
+    private fun startThermalMonitor() {
+        if (batteryReceiver != null) return
+        try {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (intent == null) return
+                    val tenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)
+                    if (tenths > 0) deviceTempC = tenths / 10.0
+                }
+            }
+            registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            batteryReceiver = receiver
+        } catch (t: Throwable) {
+            LogStore.event("Thermal monitor unavailable: ${t.javaClass.simpleName}")
+        }
+    }
+
+    private fun stopThermalMonitor() {
+        val r = batteryReceiver
+        if (r != null) {
+            try {
+                unregisterReceiver(r)
+            } catch (_: Throwable) {
+            }
+            batteryReceiver = null
+        }
+    }
+
+    private fun checkThermal() {
+        val temp = deviceTempC
+        if (temp <= 0.0) return
+        val warnC = settingsRepo.thermalWarnC
+        val critC = settingsRepo.thermalCritC.coerceAtLeast(warnC + 1)
+        if (temp >= critC && !thermalCritFired) {
+            thermalCritFired = true
+            LogStore.event(
+                "Device temperature critical (${String.format(Locale.US, "%.1f", temp)}°C ≥ ${critC}°C) — " +
+                    "safe stop to protect the device"
+            )
+            failNow("Phone temperature critical — stream stopped to protect the device.")
+            stopRequested = true
+            MicMixer.stop()
+            ffmpeg.cancelCurrent()
+        } else if (temp >= warnC && !thermalWarnShown) {
+            thermalWarnShown = true
+            LogStore.event(
+                "Device temperature high (${String.format(Locale.US, "%.1f", temp)}°C ≥ ${warnC}°C) — " +
+                    "monitoring; safe stop if it reaches ${critC}°C"
+            )
+        }
+    }
+
+    private fun startTicker() {
+        tickerJob?.cancel()
+        tickerJob = scope.launch {
+            var renewals = 0
+            while (isActive) {
+                post { it.copy(elapsedMs = System.currentTimeMillis() - startedAt) }
+                // Renew the partial wake lock well before its hard cap expires,
+                // otherwise the CPU may sleep mid-encode on long sessions.
+                val wl = wakeLock
+                if (wl != null && !wl.isHeld && isStreaming) {
+                    try {
+                        wl.acquire(12 * 60 * 60 * 1000L)
+                        renewals++
+                        LogStore.event("WakeLock renewed (#$renewals) for long session")
+                    } catch (t: Throwable) {
+                    }
+                }
+                delay(1000)
+            }
+        }
+    }
+
+    private fun cleanup(pipePath: String?) {
+        isStreaming = false
+        tickerJob?.cancel()
+        stopThermalMonitor()
+        // Honest last-session status back to the stream project (if any).
+        projectId?.let { pid ->
+            val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
+                .format(java.util.Date())
+            val status = when (state.phase) {
+                Phase.ERROR -> "Failed at $stamp"
+                Phase.STOPPING -> "Stopped at $stamp"
+                else -> "Ended at $stamp"
+            }
+            runCatching {
+                com.videolive.app.data.ProjectStore.setStatus(this, pid, status)
+            }
+        }
+        // Truthful terminal notification: detach the foreground service but
+        // leave a dismissible, accurate end-state notification instead of a
+        // stale "LIVE" badge.
+        val terminal = when (state.phase) {
+            Phase.ERROR -> "STREAM FAILED — ${state.errorText ?: "see Advanced Logs"}"
+            Phase.STOPPING -> "STREAM STOPPED"
+            else -> "LIVE ENDED — ${state.statusText.ifEmpty { "stream stopped" }}"
+        }
+        try {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, buildNotification(terminal, live = false, terminal = true))
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        } catch (t: Throwable) {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        }
+        try {
+            MicMixer.stop()
+        } catch (_: Throwable) {
+        }
+        pipePath?.let { safeClosePipe(it) }
+        // The temporary cache bridge copy (if one was made) is deleted after
+        // streaming stops. It will be re-created on the next start if needed.
+        try {
+            VideoLoader.releaseTemporaryCopy(VideoRepository.current)
+        } catch (_: Throwable) {
+        }
+        VideoRepository.current = null
+        wakeLock?.let {
+            try {
+                if (it.isHeld) it.release()
+            } catch (_: Throwable) {
+            }
+        }
+        wakeLock = null
+        stopSelf()
+    }
+
+    /** If the system swipes the app away while idle, make sure nothing stale remains. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (!isStreaming) {
+            try {
+                (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+                    .cancel(NOTIFICATION_ID)
+            } catch (_: Throwable) {
+            }
+            stopSelf()
+        }
+    }
+
+    private fun safeClosePipe(path: String) {
+        try {
+            FFmpegKitConfig.closeFFmpegPipe(path)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun backoffMs(attempt: Int): Long {
+        val step = (attempt - 1).coerceIn(0, 6)
+        return min((1L shl step) * 2000L, 30_000L)
+    }
+
+    /** Backoff delay that exits promptly when STOP LIVE or Retry Now is pressed. */
+    private suspend fun stoppableDelay(ms: Long) {
+        var left = ms
+        while (left > 0 && !stopRequested && !Companion.retryNowPending()) {
+            val step = minOf(500L, left)
+            delay(step)
+            left -= step
+        }
+    }
+
+    private fun acquireWakeLock() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "videolive:stream").apply {
+                setReferenceCounted(false)
+                acquire(12 * 60 * 60 * 1000L) // hard cap: 12 hours
+            }
+        } catch (t: Throwable) {
+            LogStore.event("WakeLock unavailable: ${t.javaClass.simpleName}")
+        }
+    }
+
+    private fun post(transform: (StreamUiState) -> StreamUiState) {
+        // Single source of truth: companion StateFlow (UI) + instance mirror
+        // (service-side decisions such as the terminal notification).
+        val next = transform(uiState.value)
+        uiState.value = next
+        state = next
+    }
+
+    private fun createChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "Live streaming",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+                channel.description = "Keeps the live stream running in the background"
+                channel.setShowBadge(false)
+                nm.createNotificationChannel(channel)
+            }
+        }
+    }
+
+    /** Re-publishes the foreground notification (e.g. once we are really LIVE). */
+    private fun refreshNotification(videoName: String, live: Boolean) {
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, buildNotification(videoName, live))
+        } catch (t: Throwable) {
+            LogStore.event("Notification update failed: ${t.javaClass.simpleName}")
+        }
+    }
+
+    private fun buildNotification(
+        videoName: String,
+        live: Boolean = false,
+        terminal: Boolean = false
+    ): Notification {
+        val openIntent = Intent(this, MainActivity::class.java)
+            .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val openPi = PendingIntent.getActivity(
+            this, 0, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val stopIntent = Intent(this, StreamService::class.java).setAction(ACTION_STOP)
+        val stopPi = PendingIntent.getService(
+            this, 1, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return if (terminal) {
+            // End-state notification: dismissible, no chronometer, no Stop
+            // action — never claims LIVE after the work is done.
+            NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notify)
+                .setContentTitle("LIVE VIP")
+                .setContentText(videoName)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(videoName))
+                .setOngoing(false)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setShowWhen(true)
+                .setWhen(System.currentTimeMillis())
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setContentIntent(openPi)
+                .build()
+        } else {
+            NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notify)
+                .setContentTitle(if (live) "🔴 LIVE: $videoName" else "Preparing live stream")
+                .setContentText(if (live) "Streaming to YouTube" else "Video: $videoName")
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setWhen(startedAt)
+                .setUsesChronometer(true)
+                .setContentIntent(openPi)
+                .addAction(R.drawable.ic_stop, "Stop", stopPi)
+                .build()
+        }
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/stream/StreamUiState.kt ==========
+package com.videolive.app.stream
+
+/**
+ * Explicit pipeline states. The Connection indicator only advances on real
+ * evidence: ENCODING when the engine reports its output is configured,
+ * PUBLISHING when the server accepts the publish and the first frame reaches
+ * the muxer (i.e. the RTMP output was accepted), STREAMING once packets keep
+ * flowing. A running FFmpeg process alone never counts as LIVE.
+ */
+enum class Phase {
+    IDLE,
+    PREPARING,
+    ENCODING,
+    CONNECTING,
+    PUBLISHING,
+    STREAMING,
+    RECONNECTING,
+    ERROR,
+    STOPPING,
+    STOPPED
+}
+
+data class StreamUiState(
+    val phase: Phase = Phase.IDLE,
+    val statusText: String = "",
+    val errorText: String? = null,
+    val elapsedMs: Long = 0,
+    val videoName: String = "",
+    val outWidth: Int = 0,
+    val outHeight: Int = 0,
+    val fps: Int = 0,
+    val configuredBitrateKbps: Int = 0,
+    val liveFps: Float = 0f,
+    val liveBitrateKbps: Int = 0,
+    val measuredFps: Float = 0f,
+    val speed: Double = 0.0,
+    val attempt: Int = 0,
+    val micActive: Boolean = false,
+    val micMuted: Boolean = false,
+    val hasVideoAudio: Boolean = true,
+    val volumePct: Int = 100,
+    val loopCount: Int = 0,
+    val networkOk: Boolean = true,
+    // Phase 5/7/9 dashboard additions.
+    val micLevelPct: Int = 0,
+    val deviceTempC: Double = 0.0,
+    val encoderName: String = "",
+    val perfWarning: String = "",
+    val health: String = "",
+    val playlistPosition: String = "",   // "Now playing: <item> (n of m)"
+    val lastError: String = ""
+)
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/util/DeviceCaps.kt ==========
+package com.videolive.app.util
+
+import android.media.MediaCodecList
+import android.media.MediaCodecInfo
+import android.os.Build
+
+/**
+ * Honest capability detection. We never advertise features the device cannot deliver.
+ */
+object DeviceCaps {
+
+    val cpuCores: Int = Runtime.getRuntime().availableProcessors()
+
+    fun hasHardwareH264Encoder(): Boolean = try {
+        val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+        list.codecInfos.any { info ->
+            info.isEncoder && info.supportedTypes.any { it.equals("video/avc", ignoreCase = true) }
+        }
+    } catch (t: Throwable) {
+        false
+    }
+
+    /**
+     * The FFmpeg build ships the libx264 software encoder, which is what actually runs.
+     * To keep long sessions stable on weaker devices we cap very demanding combinations.
+     * Returns a user visible note when something was adjusted, or null.
+     */
+    fun adjustFpsIfNeeded(qualityLabel: String, requestedFps: Int): Pair<Int, String?> {
+        val demanding = qualityLabel == "1080p" && requestedFps > 30 && cpuCores < 8
+        val mid = qualityLabel == "720p" && requestedFps > 30 && cpuCores < 4
+        return if (demanding || mid) {
+            30 to "Device has $cpuCores CPU cores — FPS capped to 30 for ${qualityLabel} stability."
+        } else {
+            requestedFps to null
+        }
+    }
+
+    fun describe(): String =
+        "FFmpeg engine (libx264 software H.264 + native AAC) • ${cpuCores} CPU cores • " +
+            "hardware AVC encoder present: ${if (hasHardwareH264Encoder()) "yes" else "no"} • " +
+            "Android ${Build.VERSION.RELEASE}"
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/util/Net.kt ==========
+package com.videolive.app.util
+
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+
+object Net {
+
+    fun isOnline(context: Context): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/util/Sanitize.kt ==========
+package com.videolive.app.util
+
+/**
+ * The stream key must never appear in logs, crash reports, notifications or UI.
+ * Every line that reaches the log store is passed through [mask].
+ */
+object Sanitize {
+
+    private val URL_WITH_PATH = Regex("""(rtmps?|https?|tcp|tls)://([^/\s:"']+)(/[^\s"'`]*)""")
+
+    fun mask(input: String?): String {
+        if (input.isNullOrEmpty()) return ""
+        return URL_WITH_PATH.replace(input) { m ->
+            "${m.groupValues[1]}://${m.groupValues[2]}/<hidden-key>"
+        }
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/util/Texts.kt ==========
+package com.videolive.app.util
+
+import java.util.Locale
+
+object Texts {
+
+    fun formatDuration(ms: Long): String {
+        if (ms <= 0) return "—"
+        val totalSeconds = ms / 1000
+        val h = totalSeconds / 3600
+        val m = (totalSeconds % 3600) / 60
+        val s = totalSeconds % 60
+        return if (h > 0) String.format(Locale.US, "%02d:%02d:%02d", h, m, s)
+        else String.format(Locale.US, "%02d:%02d", m, s)
+    }
+
+    fun formatClock(ms: Long): String {
+        val safe = if (ms < 0) 0 else ms
+        val totalSeconds = safe / 1000
+        val h = totalSeconds / 3600
+        val m = (totalSeconds % 3600) / 60
+        val s = totalSeconds % 60
+        return String.format(Locale.US, "%02d:%02d:%02d", h, m, s)
+    }
+
+    fun formatSize(bytes: Long): String {
+        if (bytes <= 0) return "—"
+        val mb = bytes / (1024f * 1024f)
+        return if (mb >= 1024) String.format(Locale.US, "%.2f GB", mb / 1024f)
+        else String.format(Locale.US, "%.1f MB", mb)
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/java/com/videolive/app/util/ThemeEngine.kt ==========
+package com.videolive.app.util
+
+import android.app.Activity
+import android.content.Context
+import androidx.annotation.AttrRes
+import androidx.annotation.ColorInt
+import com.videolive.app.data.ThemeStore
+
+/**
+ * Applies the persisted theme BEFORE setContentView so every resource
+ * (layouts, drawables, dialogs) resolves the themeable attrs consistently.
+ */
+object ThemeEngine {
+
+    fun apply(activity: Activity) {
+        activity.setTheme(ThemeStore.current(activity).resId)
+        // Accent is a forced overlay so any theme + any accent combine.
+        activity.theme.applyStyle(ThemeStore.accent(activity).overlayRes, true)
+    }
+
+    /** Resolves a themeable color attr for code-side coloring. */
+    @ColorInt
+    fun color(context: Context, @AttrRes attr: Int): Int {
+        val ta = context.theme.obtainStyledAttributes(intArrayOf(attr))
+        return try {
+            ta.getColor(0, 0)
+        } finally {
+            ta.recycle()
+        }
+    }
+}
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable-nodpi/logo_live_vip.jpg ==========
+[BINARY FILE — content not dumped as text]
+Type: jpg (binary, content not dumped)
+Size: 78756 bytes
+Description: App launcher logo (user-provided image).
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_banner_battery.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#2E2410" />
+    <stroke android:width="1dp" android:color="#6B5317" />
+    <corners android:radius="14dp" />
+</shape>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_banner_live.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="0"
+        android:startColor="#5A1620"
+        android:endColor="#3A1030" />
+    <stroke android:width="1dp" android:color="@color/red" />
+    <corners android:radius="14dp" />
+</shape>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_button_accent.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape>
+            <solid android:color="?attr/vlAccentSoft" />
+            <corners android:radius="14dp" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <solid android:color="?attr/vlAccent" />
+            <corners android:radius="14dp" />
+        </shape>
+    </item>
+</selector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_button_live.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape>
+            <solid android:color="@color/red_dark" />
+            <corners android:radius="14dp" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <gradient
+                android:angle="0"
+                android:startColor="#FF5A5F"
+                android:endColor="@color/red" />
+            <corners android:radius="14dp" />
+        </shape>
+    </item>
+</selector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_button_secondary.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape>
+            <solid android:color="?attr/vlOptionSelected" />
+            <stroke android:width="1dp" android:color="?attr/vlAccent" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <solid android:color="?attr/vlChipBg" />
+            <stroke android:width="1dp" android:color="?attr/vlInputStroke" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+</selector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_card.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="?attr/vlCard" />
+    <stroke android:width="1dp" android:color="?attr/vlStroke" />
+    <corners android:radius="14dp" />
+</shape>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_chip_selector.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_selected="true">
+        <shape>
+            <gradient
+                android:angle="0"
+                android:startColor="?attr/vlAccent"
+                android:endColor="?attr/vlAccentSoft" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <solid android:color="?attr/vlChipBg" />
+            <stroke android:width="1dp" android:color="?attr/vlInputStroke" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+</selector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_input.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="?attr/vlInputBg" />
+    <stroke android:width="1dp" android:color="?attr/vlInputStroke" />
+    <corners android:radius="12dp" />
+</shape>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_logo.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="135"
+        android:startColor="?attr/vlAccent"
+        android:endColor="?attr/vlAccentSoft" />
+    <corners android:radius="14dp" />
+</shape>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_option_selector.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_selected="true">
+        <shape>
+            <solid android:color="?attr/vlOptionSelected" />
+            <stroke android:width="1.5dp" android:color="?attr/vlAccent" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <solid android:color="?attr/vlInputBg" />
+            <stroke android:width="1dp" android:color="?attr/vlInputStroke" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+</selector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_pill_live.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/red" />
+    <corners android:radius="999dp" />
+</shape>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_preview.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="?attr/vlPreviewBg" />
+    <stroke android:width="1dp" android:color="?attr/vlStroke" />
+    <corners android:radius="16dp" />
+</shape>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/bg_window.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="270"
+        android:startColor="?attr/vlBgTop"
+        android:endColor="?attr/vlBgBottom" />
+</shape>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/chip_text_selector.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_selected="true" android:color="?attr/vlOnAccent" />
+    <item android:color="?attr/vlTextSecondary" />
+</selector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_aspect.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:pathData="M3,6h18v12H3z"
+        android:strokeColor="?attr/vlAccentSoft" android:strokeWidth="1.8" android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path
+        android:pathData="M14.5,9h3v6h-3zM6.5,9h5v6h-5z"
+        android:strokeColor="?attr/vlAccentSoft" android:strokeWidth="1.3" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_audio.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="?attr/vlAccent" android:pathData="M4,9.2v5.6h3.6L13,19V5L7.6,9.2z" />
+    <path
+        android:pathData="M16.2,8.7a4.6,4.6 0 0,1 0,6.6"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path
+        android:pathData="M18.9,6.2a8.2,8.2 0 0,1 0,11.6"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_back.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:pathData="M15,5l-7,7l7,7"
+        android:strokeColor="?attr/vlTextPrimary" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_broadcast.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="?attr/vlAccent" android:pathData="M12,10.2a1.8,1.8 0 1,1 0,3.6a1.8,1.8 0 1,1 0,-3.6z" />
+    <path
+        android:pathData="M8.5,8.5a5,5 0 0,0 0,7"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path
+        android:pathData="M15.5,8.5a5,5 0 0,1 0,7"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path
+        android:pathData="M5.7,5.7a9,9 0 0,0 0,12.6"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path
+        android:pathData="M18.3,5.7a9,9 0 0,1 0,12.6"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_eye.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:pathData="M2.5,12S6,5.8 12,5.8S21.5,12 21.5,12S18,18.2 12,18.2S2.5,12 2.5,12z"
+        android:strokeColor="?attr/vlTextSecondary" android:strokeWidth="1.7" android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path android:fillColor="?attr/vlTextSecondary" android:pathData="M12,9.3a2.7,2.7 0 1,1 0,5.4a2.7,2.7 0 1,1 0,-5.4z" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_eye_off.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:pathData="M4.5,8.2C3.2,9.9 2.5,12 2.5,12s3.5,6.2 9.5,6.2c1.2,0 2.3,-0.24 3.3,-0.63M9.5,6.1C10.3,5.9 11.1,5.8 12,5.8c6,0 9.5,6.2 9.5,6.2s-0.8,1.4 -2.2,2.9"
+        android:strokeColor="?attr/vlTextSecondary" android:strokeWidth="1.7" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path
+        android:pathData="M4,4l16,16"
+        android:strokeColor="?attr/vlTextSecondary" android:strokeWidth="1.7" android:strokeLineCap="round" android:fillColor="#00000000" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_folder.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:pathData="M3,7.5a2,2 0 0,1 2,-2h4.2l2,2.2H19a2,2 0 0,1 2,2v7a2,2 0 0,1 -2,2H5a2,2 0 0,1 -2,-2z"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineJoin="round" android:fillColor="#00000000" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_info.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:pathData="M12,3a9,9 0 1,1 0,18a9,9 0 1,1 0,-18z"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:fillColor="#00000000" />
+    <path android:fillColor="?attr/vlAccent" android:pathData="M12,7.2a1.1,1.1 0 1,1 0,2.2a1.1,1.1 0 1,1 0,-2.2z" />
+    <path
+        android:pathData="M12,11v5.5"
+        android:strokeColor="?attr/vlAccent" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+</vector>
+
+========== END FILE ==========
+
+========== FILE: app/src/main/res/drawable/ic_launcher.xml ==========
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape>
+            <gradient
+                android:angle="135"
+                android:startColor="?attr/vlAccent"
+                android:endColor="?attr/vlAccentSoft" />
+            <corners android:radius="24dp" />
+        </shape>
+    </item>
+    <item
+        android:left="22dp" android:top="22dp" android:right="22dp" android:bottom="22dp"
+        android:drawable="@drawable/ic_play" />
+</layer-list>
+
+========== END FILE ==========
+

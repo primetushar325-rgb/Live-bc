@@ -1,0 +1,648 @@
+================================================================
+LIVE VIP — StreamService.kt PART 2 of 2 (LINES 661-1302 of 1302)
+Path: app/src/main/java/com/videolive/app/stream/StreamService.kt
+Commit: 4ecde388c36686a5243e676c45be702f88c086a0 — UNMODIFIED original code
+================================================================
+
+                    }
+                    if (driftSec >= 45.0 && !driftCritical) {
+                        driftCritical = true
+                        post { s ->
+                            s.copy(
+                                perfWarning = "Stream falling behind real time — stop and restart " +
+                                    "at 480p or lower FPS for long sessions."
+                            )
+                        }
+                        LogStore.event(
+                            "LATENCY DRIFT severe: ${String.format(Locale.US, "%.0f", driftSec)}s behind " +
+                                "real time. Continuing will keep increasing latency/stutter. " +
+                                "Recommendation: stop now, lower quality (480p) or FPS, restart."
+                        )
+                    }
+
+                    val healthLabel = when {
+                        transportStallStreak >= 2 -> "Transport stalled"
+                        driftCritical || overloadWarned ||
+                            (measuredFps > 0f && measuredFps < config.fps * 0.8f) ->
+                            "Performance warning"
+                        else -> "Healthy"
+                    }
+                    val loops: Int
+                    var itemName = config.videoName
+                    if (playlistMode && totalPlaylistMs > 0) {
+                        val loopAll = config.loopMode == LoopMode.ALL
+                        val pos = if (loopAll) st.time % totalPlaylistMs else st.time
+                        loops = if (loopAll) (st.time / totalPlaylistMs).toInt() else 0
+                        var cum = 0L
+                        var idx = playlistDurations.size - 1
+                        for (k in playlistDurations.indices) {
+                            cum += playlistDurations[k]
+                            if (pos < cum) {
+                                idx = k
+                                break
+                            }
+                        }
+                        itemName = playlistNames[idx]
+                    } else {
+                        loops = if (info.durationMs > 0) (st.time / info.durationMs).toInt() else 0
+                    }
+
+                    // Encode-overload detection (several signals, sustained):
+                    // measured cadence well below target WHILE encode speed is
+                    // under realtime means the device cannot keep up — report
+                    // it, never silently "fix" by restarting a healthy stream.
+                    if (measuredFps > 0f && st.speed > 0.0 &&
+                        measuredFps < config.fps * 0.8f && st.speed < 1.0
+                    ) {
+                        overloadStreak++
+                    } else {
+                        overloadStreak = 0
+                    }
+                    if (overloadStreak >= 10 && !overloadWarned) {
+                        overloadWarned = true
+                        post { s ->
+                            s.copy(
+                                perfWarning = "Encoding below real time — use 480p or a " +
+                                    "lower FPS for stable streaming on this device."
+                            )
+                        }
+                        LogStore.event(
+                            "ENCODE OVERLOAD suspected: measured " +
+                                "${String.format(Locale.US, "%.1f", measuredFps)} fps vs target " +
+                                "${config.fps}, speed ${String.format(Locale.US, "%.2f", st.speed)}x, " +
+                                "temp ${String.format(Locale.US, "%.1f", deviceTempC)}C. " +
+                                "This device cannot sustain ${config.quality.label}@${config.fps}fps — " +
+                                "for long sessions use 480p or 30 fps, and close heavy " +
+                                "background apps."
+                        )
+                    }
+
+                    // Phase 3: session duration limit — safe stop, never a crash.
+                    if (!durationReached && config.stopPolicy == StopPolicy.STOP_AFTER_DURATION &&
+                        config.sessionDurationHours > 0 &&
+                        st.time >= config.sessionDurationHours * 3600_000L
+                    ) {
+                        durationReached = true
+                        LogStore.event(
+                            "Session duration limit reached (${config.sessionDurationHours}h) — stopping safely"
+                        )
+                        stopRequested = true
+                        MicMixer.stop()
+                        ffmpeg.cancelCurrent()
+                    }
+
+                    // Phase 7: thermal guard on every stats tick.
+                    checkThermal()
+
+                    val netOk = Net.isOnline(this@StreamService)
+                    if (!everConnected) {
+                        everConnected = true
+                        // Everything below completes INSIDE the output open,
+                        // before the first frame is ever encoded — the first
+                        // statistic is the proof they all succeeded.
+                        LogStore.event("RTMP(S) transport established (TCP + TLS + RTMP handshake)")
+                        LogStore.event("RTMP connect command successful")
+                        LogStore.event("RTMP publish accepted by server")
+                        LogStore.event(
+                            "First video/audio packets transmitted to ingest " +
+                                "(frame #${st.videoFrameNumber}, ${st.bitrate.toInt()} kbps, " +
+                                "out_time ${st.time} ms, total ${st.size} bytes)"
+                        )
+                        post { s ->
+                            if (s.phase == Phase.STOPPING || s.phase == Phase.ERROR) s
+                            else s.copy(
+                                phase = Phase.PUBLISHING,
+                                statusText = "Publishing...",
+                                liveFps = st.videoFps,
+                                liveBitrateKbps = st.bitrate.toInt(),
+                                speed = st.speed,
+                                loopCount = loops,
+                                networkOk = netOk,
+                                videoName = config.videoName,
+                                playlistPosition = if (playlistMode) itemName else "",
+                                micLevelPct = MicMixer.levelPct,
+                                deviceTempC = deviceTempC,
+                                health = healthLabel
+                            )
+                        }
+                    } else {
+                        if (statsSeen == 2) {
+                            LogStore.event(
+                                "ENCODER STREAMING — packets flowing continuously. " +
+                                    "YouTube broadcast confirmation pending: check the " +
+                                    "YouTube Live Control Room preview (press GO LIVE if needed)."
+                            )
+                        }
+                        if (statsSeen % 30 == 0) {
+                            // Periodic diagnostic report (Advanced Logs).
+                            LogStore.event(
+                                "DIAG: target ${config.fps} fps | measured " +
+                                    "${String.format(Locale.US, "%.1f", measuredFps)} fps | " +
+                                    "engine ${st.videoFps} fps | bitrate ${st.bitrate.toInt()} kbps " +
+                                    "(target ${config.targetBitrateKbps()}) | speed " +
+                                    "${String.format(Locale.US, "%.2f", st.speed)}x | " +
+                                    "net=${if (netOk) "OK" else "POOR"} | reconnects=$attempt | " +
+                                    "temp=${String.format(Locale.US, "%.1f", deviceTempC)}C | " +
+                                    "drift=${String.format(Locale.US, "%.0f", driftSec)}s | " +
+                                    "frame #${st.videoFrameNumber}, out_time ${st.time} ms, " +
+                                    "total ${st.size} bytes, loop ${loops + 1}"
+                            )
+                        }
+                        post { s ->
+                            if (s.phase == Phase.STOPPING || s.phase == Phase.ERROR) s
+                            else {
+                                if (!netOk && s.networkOk) {
+                                    LogStore.event("Network condition: POOR — monitoring connection")
+                                }
+                                if (netOk && !s.networkOk) {
+                                    LogStore.event("Connection restored")
+                                }
+                                s.copy(
+                                    phase = Phase.STREAMING,
+                                    statusText = when {
+                                        !netOk -> "Network poor — monitoring..."
+                                        !s.networkOk -> "Connection restored"
+                                        else -> "Sending video to YouTube..."
+                                    },
+                                    liveFps = st.videoFps,
+                                    measuredFps = measuredFps,
+                                    liveBitrateKbps = st.bitrate.toInt(),
+                                    speed = st.speed,
+                                    loopCount = loops,
+                                    networkOk = netOk,
+                                    playlistPosition = if (playlistMode) itemName else "",
+                                    micLevelPct = MicMixer.levelPct,
+                                    deviceTempC = deviceTempC,
+                                    health = healthLabel
+                                )
+                            }
+                        }
+                        if (!liveNotified) {
+                            liveNotified = true
+                            refreshNotification(config.videoName, live = true)
+                        }
+                    }
+                }
+                watchdog.cancel()
+
+                if (stopRequested) break
+
+                if (thermalCritFired) {
+                    // failNow already posted ERROR and the engine was cancelled.
+                    break
+                }
+
+                if (connectTimedOut) {
+                    LogStore.event("ERROR: RTMP connection timed out after ${CONNECT_TIMEOUT_MS / 1000}s")
+                    failNow(
+                        "RTMP connection timed out. The server did not accept the " +
+                            "connection within ${CONNECT_TIMEOUT_MS / 1000} seconds. " +
+                            "Check your internet/firewall and try again."
+                    )
+                    return
+                }
+
+                val ranSeconds = (System.currentTimeMillis() - sessionStartedAt) / 1000
+                // A long healthy run resets the retry budget.
+                if (ranSeconds >= 60) attempt = 0
+
+                when (result) {
+                    is RunResult.Success -> {
+                        if (playlistMode && config.loopMode != LoopMode.ALL) {
+                            // Sequential/Shuffle playlists finish the list and the
+                            // concat demuxer exits cleanly — that is the intended
+                            // end of the session, not a failure.
+                            LogStore.event("Playlist finished after ${ranSeconds}s — ending session")
+                            post {
+                                it.copy(
+                                    phase = Phase.STOPPED,
+                                    statusText = "Playlist finished — stream ended",
+                                    elapsedMs = System.currentTimeMillis() - startedAt
+                                )
+                            }
+                            return
+                        }
+                        LogStore.event("FFmpeg exited cleanly after ${ranSeconds}s (unexpected)")
+                        attempt++
+                        if (attempt > MAX_ATTEMPTS) {
+                            failNow("Streaming engine exited repeatedly.")
+                            return
+                        }
+                        post {
+                            it.copy(
+                                phase = Phase.RECONNECTING,
+                                statusText = "Stream interrupted — restarting $attempt/$MAX_ATTEMPTS...",
+                                attempt = attempt
+                            )
+                        }
+                        stoppableDelay(backoffMs(attempt))
+                    }
+                    is RunResult.Cancelled -> {
+                        // A cancel here means the watchdog killed a stalled session.
+                        if (attemptUsedHw && ranSeconds < 20 && !forceSoftware) {
+                            forceSoftware = true
+                            LogStore.event(
+                                "Hardware encoder stalled early (${ranSeconds}s) — " +
+                                    "falling back to libx264 (software)."
+                            )
+                        }
+                        // Overload is not a transient fault: retrying the same
+                        // configuration would loop forever. Stop honestly and
+                        // recommend a sustainable configuration.
+                        if (overloadWarned && !attemptUsedHw) {
+                            failNow(
+                                "Encoding overload: this device cannot sustain " +
+                                    "${config.quality.label} @ ${config.fps} fps in real time. " +
+                                    "Restart with 480p or a lower FPS for a stable stream."
+                            )
+                            return
+                        }
+                        attempt++
+                        LogStore.event("Stream stalled — forcing reconnect ($attempt/$MAX_ATTEMPTS)")
+                        if (attempt > MAX_ATTEMPTS) {
+                            failNow("The stream kept stalling. Please try again.")
+                            return
+                        }
+                        post {
+                            it.copy(
+                                phase = Phase.RECONNECTING,
+                                statusText = "Reconnecting $attempt/$MAX_ATTEMPTS...",
+                                attempt = attempt
+                            )
+                        }
+                        stoppableDelay(backoffMs(attempt))
+                    }
+                    is RunResult.Failed -> {
+                        val err = result.error
+                        LogStore.event("FFmpeg failed: ${err.userMessage}")
+                        post { it.copy(lastError = err.userMessage) }
+                        if (attemptUsedHw && ranSeconds < 20 && !forceSoftware) {
+                            forceSoftware = true
+                            LogStore.event(
+                                "Hardware encoder attempt failed after ${ranSeconds}s — " +
+                                    "falling back to libx264 (software). Reason: ${err.userMessage}"
+                            )
+                        }
+                        if (err.kind == ErrorKind.AUTH || err.kind == ErrorKind.INPUT) {
+                            failNow(err.userMessage)
+                            return
+                        }
+                        attempt++
+                        if (attempt > MAX_ATTEMPTS) {
+                            failNow("${err.userMessage} (retry limit reached)")
+                            return
+                        }
+                        post {
+                            it.copy(
+                                phase = Phase.RECONNECTING,
+                                statusText = "Reconnecting $attempt/$MAX_ATTEMPTS — ${err.userMessage}",
+                                attempt = attempt
+                            )
+                        }
+                        stoppableDelay(backoffMs(attempt))
+                    }
+                }
+            }
+
+            if (!thermalCritFired) {
+                val stopText = when {
+                    durationReached -> "Duration limit reached — stream stopped safely"
+                    else -> "Live ended"
+                }
+                post { it.copy(phase = Phase.STOPPED, statusText = stopText) }
+                LogStore.event("Stream stopped cleanly")
+            }
+        } catch (t: Throwable) {
+            LogStore.event("Unexpected error: ${t.javaClass.simpleName}")
+            failNow("Unexpected error: ${t.javaClass.simpleName}")
+        } finally {
+            cleanup(pipePath)
+        }
+    }
+
+    private suspend fun watchdogLoop(sessionStartedAt: Long) {
+        while (coroutineContext.isActive) {
+            delay(2000)
+            if (stopRequested) continue
+            if (!everConnected) {
+                // Connection timeout: the RTMP output was not accepted within
+                // the budget. Stop the attempt cleanly instead of leaving the
+                // UI stuck on "Connecting..." forever.
+                val waited = System.currentTimeMillis() - sessionStartedAt
+                if (waited > CONNECT_TIMEOUT_MS) {
+                    connectTimedOut = true
+                    LogStore.event(
+                        "No connection established in ${CONNECT_TIMEOUT_MS / 1000}s — aborting attempt"
+                    )
+                    ffmpeg.cancelCurrent()
+                    return
+                }
+            } else {
+                val idleMs = System.currentTimeMillis() - lastProgressAt
+                // Soft stall: warn with ALL available signals before taking
+                // any action (avoids false positives from short fluctuations).
+                if (idleMs > 10_000 && !softStallWarned) {
+                    softStallWarned = true
+                    LogStore.event(
+                        "STALL WATCH: no progress ${idleMs / 1000}s | signals: " +
+                            "measured ${String.format(Locale.US, "%.1f", measuredFps)} fps, " +
+                            "temp ${String.format(Locale.US, "%.1f", deviceTempC)}C, " +
+                            "net=${if (Net.isOnline(this@StreamService)) "OK" else "DOWN"}, " +
+                            "mic=${if (MicMixer.levelPct > 0) "active" else "idle"} — monitoring"
+                    )
+                }
+                if (idleMs > WATCHDOG_STALL_MS) {
+                    LogStore.event(
+                        "STALL CONFIRMED: no encode progress for ${idleMs / 1000}s " +
+                            "(measured ${String.format(Locale.US, "%.1f", measuredFps)} fps, " +
+                            "temp ${String.format(Locale.US, "%.1f", deviceTempC)}C, " +
+                            "net=${if (Net.isOnline(this@StreamService)) "OK" else "DOWN"}) " +
+                            "— restarting engine"
+                    )
+                    ffmpeg.cancelCurrent()
+                    return
+                }
+            }
+        }
+    }
+
+    private fun failNow(message: String) {
+        post {
+            it.copy(
+                phase = Phase.ERROR,
+                statusText = message,
+                errorText = message,
+                lastError = message
+            )
+        }
+        LogStore.event("ERROR: $message")
+    }
+
+    // ---- Phase 7: thermal guard --------------------------------------------
+    // Temperature comes from the battery sensor (ACTION_BATTERY_CHANGED), in
+    // tenths of a degree. Thresholds are user-configurable in Settings; no
+    // values are invented here.
+
+    private fun startThermalMonitor() {
+        if (batteryReceiver != null) return
+        try {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (intent == null) return
+                    val tenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)
+                    if (tenths > 0) deviceTempC = tenths / 10.0
+                }
+            }
+            registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            batteryReceiver = receiver
+        } catch (t: Throwable) {
+            LogStore.event("Thermal monitor unavailable: ${t.javaClass.simpleName}")
+        }
+    }
+
+    private fun stopThermalMonitor() {
+        val r = batteryReceiver
+        if (r != null) {
+            try {
+                unregisterReceiver(r)
+            } catch (_: Throwable) {
+            }
+            batteryReceiver = null
+        }
+    }
+
+    private fun checkThermal() {
+        val temp = deviceTempC
+        if (temp <= 0.0) return
+        val warnC = settingsRepo.thermalWarnC
+        val critC = settingsRepo.thermalCritC.coerceAtLeast(warnC + 1)
+        if (temp >= critC && !thermalCritFired) {
+            thermalCritFired = true
+            LogStore.event(
+                "Device temperature critical (${String.format(Locale.US, "%.1f", temp)}°C ≥ ${critC}°C) — " +
+                    "safe stop to protect the device"
+            )
+            failNow("Phone temperature critical — stream stopped to protect the device.")
+            stopRequested = true
+            MicMixer.stop()
+            ffmpeg.cancelCurrent()
+        } else if (temp >= warnC && !thermalWarnShown) {
+            thermalWarnShown = true
+            LogStore.event(
+                "Device temperature high (${String.format(Locale.US, "%.1f", temp)}°C ≥ ${warnC}°C) — " +
+                    "monitoring; safe stop if it reaches ${critC}°C"
+            )
+        }
+    }
+
+    private fun startTicker() {
+        tickerJob?.cancel()
+        tickerJob = scope.launch {
+            var renewals = 0
+            while (isActive) {
+                post { it.copy(elapsedMs = System.currentTimeMillis() - startedAt) }
+                // Renew the partial wake lock well before its hard cap expires,
+                // otherwise the CPU may sleep mid-encode on long sessions.
+                val wl = wakeLock
+                if (wl != null && !wl.isHeld && isStreaming) {
+                    try {
+                        wl.acquire(12 * 60 * 60 * 1000L)
+                        renewals++
+                        LogStore.event("WakeLock renewed (#$renewals) for long session")
+                    } catch (t: Throwable) {
+                    }
+                }
+                delay(1000)
+            }
+        }
+    }
+
+    private fun cleanup(pipePath: String?) {
+        isStreaming = false
+        tickerJob?.cancel()
+        stopThermalMonitor()
+        // Honest last-session status back to the stream project (if any).
+        projectId?.let { pid ->
+            val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
+                .format(java.util.Date())
+            val status = when (state.phase) {
+                Phase.ERROR -> "Failed at $stamp"
+                Phase.STOPPING -> "Stopped at $stamp"
+                else -> "Ended at $stamp"
+            }
+            runCatching {
+                com.videolive.app.data.ProjectStore.setStatus(this, pid, status)
+            }
+        }
+        // Truthful terminal notification: detach the foreground service but
+        // leave a dismissible, accurate end-state notification instead of a
+        // stale "LIVE" badge.
+        val terminal = when (state.phase) {
+            Phase.ERROR -> "STREAM FAILED — ${state.errorText ?: "see Advanced Logs"}"
+            Phase.STOPPING -> "STREAM STOPPED"
+            else -> "LIVE ENDED — ${state.statusText.ifEmpty { "stream stopped" }}"
+        }
+        try {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, buildNotification(terminal, live = false, terminal = true))
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        } catch (t: Throwable) {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        }
+        try {
+            MicMixer.stop()
+        } catch (_: Throwable) {
+        }
+        pipePath?.let { safeClosePipe(it) }
+        // The temporary cache bridge copy (if one was made) is deleted after
+        // streaming stops. It will be re-created on the next start if needed.
+        try {
+            VideoLoader.releaseTemporaryCopy(VideoRepository.current)
+        } catch (_: Throwable) {
+        }
+        VideoRepository.current = null
+        wakeLock?.let {
+            try {
+                if (it.isHeld) it.release()
+            } catch (_: Throwable) {
+            }
+        }
+        wakeLock = null
+        stopSelf()
+    }
+
+    /** If the system swipes the app away while idle, make sure nothing stale remains. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (!isStreaming) {
+            try {
+                (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+                    .cancel(NOTIFICATION_ID)
+            } catch (_: Throwable) {
+            }
+            stopSelf()
+        }
+    }
+
+    private fun safeClosePipe(path: String) {
+        try {
+            FFmpegKitConfig.closeFFmpegPipe(path)
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun backoffMs(attempt: Int): Long {
+        val step = (attempt - 1).coerceIn(0, 6)
+        return min((1L shl step) * 2000L, 30_000L)
+    }
+
+    /** Backoff delay that exits promptly when STOP LIVE or Retry Now is pressed. */
+    private suspend fun stoppableDelay(ms: Long) {
+        var left = ms
+        while (left > 0 && !stopRequested && !Companion.retryNowPending()) {
+            val step = minOf(500L, left)
+            delay(step)
+            left -= step
+        }
+    }
+
+    private fun acquireWakeLock() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "videolive:stream").apply {
+                setReferenceCounted(false)
+                acquire(12 * 60 * 60 * 1000L) // hard cap: 12 hours
+            }
+        } catch (t: Throwable) {
+            LogStore.event("WakeLock unavailable: ${t.javaClass.simpleName}")
+        }
+    }
+
+    private fun post(transform: (StreamUiState) -> StreamUiState) {
+        // Single source of truth: companion StateFlow (UI) + instance mirror
+        // (service-side decisions such as the terminal notification).
+        val next = transform(uiState.value)
+        uiState.value = next
+        state = next
+    }
+
+    private fun createChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "Live streaming",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+                channel.description = "Keeps the live stream running in the background"
+                channel.setShowBadge(false)
+                nm.createNotificationChannel(channel)
+            }
+        }
+    }
+
+    /** Re-publishes the foreground notification (e.g. once we are really LIVE). */
+    private fun refreshNotification(videoName: String, live: Boolean) {
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, buildNotification(videoName, live))
+        } catch (t: Throwable) {
+            LogStore.event("Notification update failed: ${t.javaClass.simpleName}")
+        }
+    }
+
+    private fun buildNotification(
+        videoName: String,
+        live: Boolean = false,
+        terminal: Boolean = false
+    ): Notification {
+        val openIntent = Intent(this, MainActivity::class.java)
+            .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val openPi = PendingIntent.getActivity(
+            this, 0, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val stopIntent = Intent(this, StreamService::class.java).setAction(ACTION_STOP)
+        val stopPi = PendingIntent.getService(
+            this, 1, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return if (terminal) {
+            // End-state notification: dismissible, no chronometer, no Stop
+            // action — never claims LIVE after the work is done.
+            NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notify)
+                .setContentTitle("LIVE VIP")
+                .setContentText(videoName)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(videoName))
+                .setOngoing(false)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setShowWhen(true)
+                .setWhen(System.currentTimeMillis())
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setContentIntent(openPi)
+                .build()
+        } else {
+            NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notify)
+                .setContentTitle(if (live) "🔴 LIVE: $videoName" else "Preparing live stream")
+                .setContentText(if (live) "Streaming to YouTube" else "Video: $videoName")
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setWhen(startedAt)
+                .setUsesChronometer(true)
+                .setContentIntent(openPi)
+                .addAction(R.drawable.ic_stop, "Stop", stopPi)
+                .build()
+        }
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+}

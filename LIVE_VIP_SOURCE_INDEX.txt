@@ -1,0 +1,121 @@
+================================================================
+LIVE VIP — SOURCE DUMP INDEX
+Commit: c871f1be5a0a682ed40480e486c10a1808ed06be  Branch: arena/623b9178-live-bc
+Generated: 2026-10-09T11:45:12Z
+================================================================
+
+Parts:
+  LIVE_VIP_SOURCE_PART_01.txt  —  23 files  —  159356 bytes
+  LIVE_VIP_SOURCE_PART_02.txt  —  44 files  —  159423 bytes
+  LIVE_VIP_SOURCE_PART_03.txt  —  29 files  —  159649 bytes
+  LIVE_VIP_SOURCE_PART_04.txt  —  2 files  —  5621 bytes
+
+File listing (part | path):
+  PART 01  .github/workflows/build-apk.yml
+  PART 01  .gitignore
+  PART 01  README.md
+  PART 01  app/build.gradle.kts
+  PART 01  app/proguard-rules.pro
+  PART 01  app/src/main/AndroidManifest.xml
+  PART 01  app/src/main/java/com/videolive/app/App.kt
+  PART 01  app/src/main/java/com/videolive/app/DestinationsActivity.kt
+  PART 01  app/src/main/java/com/videolive/app/LiveActivity.kt
+  PART 01  app/src/main/java/com/videolive/app/LogsActivity.kt
+  PART 01  app/src/main/java/com/videolive/app/MainActivity.kt
+  PART 01  app/src/main/java/com/videolive/app/PlaylistActivity.kt
+  PART 01  app/src/main/java/com/videolive/app/ProjectsActivity.kt
+  PART 01  app/src/main/java/com/videolive/app/SettingsActivity.kt
+  PART 01  app/src/main/java/com/videolive/app/SplashActivity.kt
+  PART 01  app/src/main/java/com/videolive/app/data/DestinationsRepository.kt
+  PART 01  app/src/main/java/com/videolive/app/data/PlaylistRepository.kt
+  PART 01  app/src/main/java/com/videolive/app/data/ProjectStore.kt
+  PART 01  app/src/main/java/com/videolive/app/data/SecurePrefs.kt
+  PART 01  app/src/main/java/com/videolive/app/data/SettingsRepository.kt
+  PART 01  app/src/main/java/com/videolive/app/data/ThemeStore.kt
+  PART 01  app/src/main/java/com/videolive/app/data/VideoRepository.kt
+  PART 01  app/src/main/java/com/videolive/app/ffmpeg/ErrorClassifier.kt
+  PART 02  app/src/main/java/com/videolive/app/ffmpeg/FFmpegCommandBuilder.kt
+  PART 02  app/src/main/java/com/videolive/app/ffmpeg/FFmpegManager.kt
+  PART 02  app/src/main/java/com/videolive/app/ffmpeg/FFmpegRuntime.kt
+  PART 02  app/src/main/java/com/videolive/app/ffmpeg/LogStore.kt
+  PART 02  app/src/main/java/com/videolive/app/media/CacheIndex.kt
+  PART 02  app/src/main/java/com/videolive/app/media/InputSource.kt
+  PART 02  app/src/main/java/com/videolive/app/media/MediaProbe.kt
+  PART 02  app/src/main/java/com/videolive/app/media/TexturePreview.kt
+  PART 02  app/src/main/java/com/videolive/app/media/UriValidator.kt
+  PART 02  app/src/main/java/com/videolive/app/media/VideoLoader.kt
+  PART 02  app/src/main/java/com/videolive/app/model/StreamConfig.kt
+  PART 02  app/src/main/java/com/videolive/app/net/RtmpProbe.kt
+  PART 02  app/src/main/java/com/videolive/app/stream/MicMixer.kt
+  PART 02  app/src/main/java/com/videolive/app/stream/StreamService.kt
+  PART 02  app/src/main/java/com/videolive/app/stream/StreamUiState.kt
+  PART 02  app/src/main/java/com/videolive/app/util/DeviceCaps.kt
+  PART 02  app/src/main/java/com/videolive/app/util/Net.kt
+  PART 02  app/src/main/java/com/videolive/app/util/Sanitize.kt
+  PART 02  app/src/main/java/com/videolive/app/util/Texts.kt
+  PART 02  app/src/main/java/com/videolive/app/util/ThemeEngine.kt
+  PART 02  app/src/main/res/drawable-nodpi/logo_live_vip.jpg
+  PART 02  app/src/main/res/drawable/bg_banner_battery.xml
+  PART 02  app/src/main/res/drawable/bg_banner_live.xml
+  PART 02  app/src/main/res/drawable/bg_button_accent.xml
+  PART 02  app/src/main/res/drawable/bg_button_live.xml
+  PART 02  app/src/main/res/drawable/bg_button_secondary.xml
+  PART 02  app/src/main/res/drawable/bg_card.xml
+  PART 02  app/src/main/res/drawable/bg_chip_selector.xml
+  PART 02  app/src/main/res/drawable/bg_input.xml
+  PART 02  app/src/main/res/drawable/bg_logo.xml
+  PART 02  app/src/main/res/drawable/bg_option_selector.xml
+  PART 02  app/src/main/res/drawable/bg_pill_live.xml
+  PART 02  app/src/main/res/drawable/bg_preview.xml
+  PART 02  app/src/main/res/drawable/bg_window.xml
+  PART 02  app/src/main/res/drawable/chip_text_selector.xml
+  PART 02  app/src/main/res/drawable/ic_aspect.xml
+  PART 02  app/src/main/res/drawable/ic_audio.xml
+  PART 02  app/src/main/res/drawable/ic_back.xml
+  PART 02  app/src/main/res/drawable/ic_broadcast.xml
+  PART 02  app/src/main/res/drawable/ic_eye.xml
+  PART 02  app/src/main/res/drawable/ic_eye_off.xml
+  PART 02  app/src/main/res/drawable/ic_folder.xml
+  PART 02  app/src/main/res/drawable/ic_info.xml
+  PART 02  app/src/main/res/drawable/ic_launcher.xml
+  PART 03  app/src/main/res/drawable/ic_loop.xml
+  PART 03  app/src/main/res/drawable/ic_mic.xml
+  PART 03  app/src/main/res/drawable/ic_notify.xml
+  PART 03  app/src/main/res/drawable/ic_palette.xml
+  PART 03  app/src/main/res/drawable/ic_play.xml
+  PART 03  app/src/main/res/drawable/ic_stop.xml
+  PART 03  app/src/main/res/drawable/ic_tune.xml
+  PART 03  app/src/main/res/drawable/ic_video.xml
+  PART 03  app/src/main/res/drawable/option_text_selector.xml
+  PART 03  app/src/main/res/layout/activity_destinations.xml
+  PART 03  app/src/main/res/layout/activity_live.xml
+  PART 03  app/src/main/res/layout/activity_logs.xml
+  PART 03  app/src/main/res/layout/activity_main.xml
+  PART 03  app/src/main/res/layout/activity_playlist.xml
+  PART 03  app/src/main/res/layout/activity_projects.xml
+  PART 03  app/src/main/res/layout/activity_settings.xml
+  PART 03  app/src/main/res/layout/activity_splash.xml
+  PART 03  app/src/main/res/values/attrs.xml
+  PART 03  app/src/main/res/values/colors.xml
+  PART 03  app/src/main/res/values/strings.xml
+  PART 03  app/src/main/res/values/themes.xml
+  PART 03  build.gradle.kts
+  PART 03  docs/FINAL-REPORT.md
+  PART 03  docs/MASTER-ROUND-REPORT.md
+  PART 03  docs/SOAK-TEST-PROCEDURE.md
+  PART 03  gradle.properties
+  PART 03  gradle/wrapper/gradle-wrapper.jar
+  PART 03  gradle/wrapper/gradle-wrapper.properties
+  PART 03  gradlew
+  PART 04  gradlew.bat
+  PART 04  settings.gradle.kts
+  PART 00  
+
+Notes:
+  - All 98 repository files are included; the only binaries
+    (logo_live_vip.jpg, gradle-wrapper.jar) are described, not dumped.
+  - CI keystore passwords in build-apk.yml are replaced with
+    [REDACTED_SECRET]. No stream keys/tokens exist in the source.
+  - No native C/C++ or JNI code exists in this project; FFmpeg is
+    consumed as the ffmpeg-kit-full-gpl AAR (downloaded + SHA-256
+    verified at build time, see app/build.gradle.kts).
