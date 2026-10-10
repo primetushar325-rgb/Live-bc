@@ -292,6 +292,7 @@ class StreamService : Service() {
     }
 
     private fun requestStop() {
+        if (stopRequested) return // multiple STOP taps must not duplicate work
         if (!isStreaming && streamJob?.isActive != true) {
             stopSelf()
             return
@@ -974,11 +975,12 @@ class StreamService : Service() {
                     }
                     is RunResult.Cancelled -> {
                         // A cancel here means the watchdog killed a stalled session.
-                        if (attemptUsedHw && ranSeconds < 20 && !forceSoftware) {
+                        if (attemptUsedHw && ranSeconds < 300 && !forceSoftware) {
                             forceSoftware = true
                             LogStore.event(
-                                "Hardware encoder stalled early (${ranSeconds}s) — " +
-                                    "falling back to libx264 (software)."
+                                "Hardware encoder attempt ended after ${ranSeconds}s — " +
+                                    "treating the hardware path as unstable on this device; " +
+                                    "falling back permanently to libx264 (software)."
                             )
                         }
                         // Overload is not a transient fault: retrying the same
@@ -1012,11 +1014,13 @@ class StreamService : Service() {
                         val err = result.error
                         LogStore.event("FFmpeg failed: ${err.userMessage}")
                         post { it.copy(lastError = err.userMessage) }
-                        if (attemptUsedHw && ranSeconds < 20 && !forceSoftware) {
+                        if (attemptUsedHw && ranSeconds < 300 && !forceSoftware) {
                             forceSoftware = true
                             LogStore.event(
                                 "Hardware encoder attempt failed after ${ranSeconds}s — " +
-                                    "falling back to libx264 (software). Reason: ${err.userMessage}"
+                                    "treating the hardware path as unstable on this device; " +
+                                    "falling back permanently to libx264 (software). " +
+                                    "Reason: ${err.userMessage}"
                             )
                         }
                         if (err.kind == ErrorKind.AUTH || err.kind == ErrorKind.INPUT) {

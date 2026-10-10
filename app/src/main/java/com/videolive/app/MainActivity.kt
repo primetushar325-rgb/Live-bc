@@ -247,6 +247,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         checkBatteryOptimization()
         liveBanner.visibility = if (StreamService.isStreaming) View.VISIBLE else View.GONE
+        renderStopButtonState()
         refreshPlaylistSummary()
         askNotificationPermissionIfNeeded()
         if (VideoRepository.current == null) {
@@ -426,7 +427,17 @@ class MainActivity : AppCompatActivity() {
             toast("Framing reset")
         }
 
-        findViewById<TextView>(R.id.btnStartLive).setOnClickListener { validateAndStart() }
+        findViewById<TextView>(R.id.btnStartLive).setOnClickListener {
+            if (StreamService.isStreaming) {
+                // Manual STOP is always available on the dashboard while a
+                // session is active. It talks to the foreground service —
+                // idempotent, so rapid taps cannot duplicate the stop.
+                StreamService.stop(this)
+                toast("Stopping the live stream…")
+            } else {
+                validateAndStart()
+            }
+        }
         findViewById<TextView>(R.id.btnTestConnection).setOnClickListener {
             runDestinationTest()
         }
@@ -467,6 +478,17 @@ class MainActivity : AppCompatActivity() {
         spinnerBitrate.setSelection(if (manual) 1 else 0)
         etBitrate.visibility = if (manual) View.VISIBLE else View.GONE
         bitrateSelectionRestored = true
+    }
+
+    /** The main dashboard button doubles as STOP LIVE while a session is
+     * running, so manual stop never depends on finding another screen. */
+    private fun renderStopButtonState() {
+        val btn = findViewById<TextView>(R.id.btnStartLive)
+        if (StreamService.isStreaming) {
+            btn.setText(R.string.stop_live)
+        } else {
+            btn.setText(R.string.start_live)
+        }
     }
 
     private fun selectOrientation(o: Orientation) {
