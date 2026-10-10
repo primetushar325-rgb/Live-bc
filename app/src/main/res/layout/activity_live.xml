@@ -406,6 +406,32 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
+        <!-- Honest broadcast verification state: the app has no authorized
+             YouTube API access, so it can never confirm the broadcast itself. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/row_youtube_status"
+                android:textColor="?attr/vlTextSecondary"
+                android:textSize="13.5sp" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:gravity="end"
+                android:text="@string/youtube_status_unverified"
+                android:textColor="?attr/vlTextFaint"
+                android:textSize="13.5sp" />
+        </LinearLayout>
+
         <LinearLayout
             android:id="@+id/rowLastError"
             android:layout_width="match_parent"

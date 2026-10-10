@@ -17,6 +17,7 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -148,6 +149,7 @@ class StreamService : Service() {
     @Volatile private var stopRequested = false
     @Volatile private var retryNowRequested = false
     private var startedAt = 0L
+    private var startedAtMonotonic = 0L
     @Volatile private var lastProgressAt = System.currentTimeMillis()
 
     // Per-FFmpeg-session evidence flags.
@@ -209,6 +211,8 @@ class StreamService : Service() {
     private lateinit var settingsRepo: SettingsRepository
     @Volatile private var deviceTempC = 0.0
     private var thermalWarnShown = false
+    private var thermalWarnSince = 0L
+    private var thermalAdvised = false
     @Volatile private var thermalCritFired = false
     private var batteryReceiver: BroadcastReceiver? = null
 
@@ -239,11 +243,14 @@ class StreamService : Service() {
                 totalPlaylistMs = 0L
                 durationReached = false
                 thermalWarnShown = false
+                thermalWarnSince = 0L
+                thermalAdvised = false
                 thermalCritFired = false
                 deviceTempC = 0.0
                 encoderInUse = ""
                 forceSoftware = false
                 startedAt = System.currentTimeMillis()
+                startedAtMonotonic = SystemClock.elapsedRealtime()
                 // Persist the session start so the true elapsed duration can be
                 // computed even if the Activity closes or the UI restarts.
                 runCatching {
@@ -818,8 +825,9 @@ class StreamService : Service() {
                         if (attempt > 0 && !recoveryNotified) {
                             recoveryNotified = true
                             notifyHealth(
-                                "Recovery succeeded — streaming resumed after " +
-                                    "$attempt reconnect attempt(s)."
+                                "Recovery succeeded — local output resumed after " +
+                                    "$attempt reconnect attempt(s). YouTube status unverified: " +
+                                    "check the Live Control Room; press GO LIVE there if needed."
                             )
                         }
                         // Everything below completes INSIDE the output open,
@@ -943,7 +951,7 @@ class StreamService : Service() {
                                 it.copy(
                                     phase = Phase.STOPPED,
                                     statusText = "Playlist finished — stream ended",
-                                    elapsedMs = System.currentTimeMillis() - startedAt
+                                    elapsedMs = SystemClock.elapsedRealtime() - startedAtMonotonic
                                 )
                             }
                             return
@@ -1205,6 +1213,25 @@ class StreamService : Service() {
                     "monitoring; safe stop if it reaches ${critC}°C"
             )
         }
+        // Sustained heat advisory (never force-restarts a healthy stream —
+        // recommends load reduction instead, once per session).
+        if (temp >= warnC && temp < critC) {
+            if (thermalWarnSince == 0L) thermalWarnSince = SystemClock.elapsedRealtime()
+            if (!thermalAdvised && SystemClock.elapsedRealtime() - thermalWarnSince > 180_000L) {
+                thermalAdvised = true
+                LogStore.event(
+                    "THERMAL ADVISORY: temperature above ${warnC}°C for 3+ minutes — " +
+                        "sustained load reduction recommended for long sessions"
+                )
+                notifyHealth(
+                    "Phone has been running hot for 3+ minutes " +
+                        "(${String.format(Locale.US, "%.1f", temp)}°C). For long sessions, restart " +
+                        "at 480p or lower FPS. The stream will stop safely at ${critC}°C."
+                )
+            }
+        } else {
+            thermalWarnSince = 0L
+        }
     }
 
     private fun startTicker() {
@@ -1212,7 +1239,8 @@ class StreamService : Service() {
         tickerJob = scope.launch {
             var renewals = 0
             while (isActive) {
-                post { it.copy(elapsedMs = System.currentTimeMillis() - startedAt) }
+                // Monotonic clock: immune to wall-clock changes mid-session.
+                post { it.copy(elapsedMs = SystemClock.elapsedRealtime() - startedAtMonotonic) }
                 // Renew the partial wake lock well before its hard cap expires,
                 // otherwise the CPU may sleep mid-encode on long sessions.
                 val wl = wakeLock
@@ -1311,7 +1339,10 @@ class StreamService : Service() {
 
     private fun backoffMs(attempt: Int): Long {
         val step = (attempt - 1).coerceIn(0, 6)
-        return min((1L shl step) * 2000L, 30_000L)
+        // Exponential backoff plus jitter so parallel recovery attempts on
+        // other devices/services would never hammer the ingest in sync.
+        return min((1L shl step) * 2000L, 30_000L) +
+            kotlin.random.Random.nextLong(0L, 400L)
     }
 
     /** Backoff delay that exits promptly when STOP LIVE or Retry Now is pressed. */
