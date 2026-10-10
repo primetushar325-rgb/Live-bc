@@ -150,7 +150,7 @@ class StreamService : Service() {
     @Volatile private var retryNowRequested = false
     private var startedAt = 0L
     private var startedAtMonotonic = 0L
-    @Volatile private var lastProgressAt = System.currentTimeMillis()
+    @Volatile private var lastProgressAt = SystemClock.elapsedRealtime()
 
     // Per-FFmpeg-session evidence flags.
     @Volatile private var everConnected = false
@@ -187,6 +187,8 @@ class StreamService : Service() {
     private var driftCritical = false
     private var driftFatal = false
     private var recoveryNotified = false
+    private var lastAttemptCount = 0
+    @Volatile private var lastDriftSec = 0.0
     private var prevBytesFrames = 0L
     private var transportStallStreak = 0
 
@@ -262,6 +264,12 @@ class StreamService : Service() {
                 // Persistent diagnostics for this session (capped + rotated).
                 runCatching {
                     LogStore.bindFile(java.io.File(filesDir, "vl_session_log.txt"))
+                }
+                // Fresh session: clear the previous run's performance advisory
+                // (it will be set again if this run cannot keep up).
+                runCatching {
+                    getSharedPreferences("vl_perf", MODE_PRIVATE).edit()
+                        .remove("limited").remove("reason").apply()
                 }
                 isStreaming = true
                 ServiceCompat.startForeground(
@@ -475,6 +483,7 @@ class StreamService : Service() {
 
             var attempt = 0
             while (!stopRequested) {
+                lastAttemptCount = attempt
                 // Retry Now is one-shot: clear it once a new attempt begins.
                 consumeRetryNow()
                 // Network gate: don't burn retries while the radio is simply down.
@@ -634,12 +643,12 @@ class StreamService : Service() {
                     }
                 }
 
-                lastProgressAt = System.currentTimeMillis()
-                val sessionStartedAt = System.currentTimeMillis()
+                lastProgressAt = SystemClock.elapsedRealtime()
+                val sessionStartedAt = SystemClock.elapsedRealtime()
                 val watchdog = scope.launch { watchdogLoop(sessionStartedAt) }
                 val result = ffmpeg.run(args, stageOnLog) { st ->
                     statsSeen++
-                    lastProgressAt = System.currentTimeMillis()
+                    lastProgressAt = SystemClock.elapsedRealtime()
 
                     // Measured output cadence (independent of FFmpeg's own fps
                     // field): frame delta over out_time delta.
@@ -704,11 +713,12 @@ class StreamService : Service() {
                     // transport is under real time and stutter/latency will
                     // only get worse the longer the session runs.
                     val driftSec: Double = if (attemptWallStartMs == 0L) {
-                        attemptWallStartMs = System.currentTimeMillis()
+                        attemptWallStartMs = SystemClock.elapsedRealtime()
                         0.0
                     } else {
-                        ((System.currentTimeMillis() - attemptWallStartMs) - statTimeMs) / 1000.0
+                        ((SystemClock.elapsedRealtime() - attemptWallStartMs) - statTimeMs) / 1000.0
                     }
+                    lastDriftSec = driftSec
                     if (driftSec >= 15.0 && !driftWarned) {
                         driftWarned = true
                         LogStore.event(
@@ -740,6 +750,7 @@ class StreamService : Service() {
                             "real time — YouTube has most likely ended this broadcast. " +
                             "Restart at 480p or lower FPS for long sessions."
                         LogStore.event("LATENCY DRIFT fatal: $msg")
+                        markPerfLimited("fell ${String.format(Locale.US, "%.0f", driftSec)}s behind real time")
                         failNow(msg)
                         stopRequested = true
                         MicMixer.stop()
@@ -937,7 +948,7 @@ class StreamService : Service() {
                     return
                 }
 
-                val ranSeconds = (System.currentTimeMillis() - sessionStartedAt) / 1000
+                val ranSeconds = (SystemClock.elapsedRealtime() - sessionStartedAt) / 1000
                 // A long healthy run resets the retry budget.
                 if (ranSeconds >= 60) attempt = 0
 
@@ -987,6 +998,7 @@ class StreamService : Service() {
                         // configuration would loop forever. Stop honestly and
                         // recommend a sustainable configuration.
                         if (overloadWarned && !attemptUsedHw) {
+                            markPerfLimited("encode overload at ${config.quality.label}@${config.fps}fps")
                             failNow(
                                 "Encoding overload: this device cannot sustain " +
                                     "${config.quality.label} @ ${config.fps} fps in real time. " +
@@ -1069,7 +1081,7 @@ class StreamService : Service() {
                 // Connection timeout: the RTMP output was not accepted within
                 // the budget. Stop the attempt cleanly instead of leaving the
                 // UI stuck on "Connecting..." forever.
-                val waited = System.currentTimeMillis() - sessionStartedAt
+                val waited = SystemClock.elapsedRealtime() - sessionStartedAt
                 if (waited > CONNECT_TIMEOUT_MS) {
                     connectTimedOut = true
                     LogStore.event(
@@ -1079,7 +1091,7 @@ class StreamService : Service() {
                     return
                 }
             } else {
-                val idleMs = System.currentTimeMillis() - lastProgressAt
+                val idleMs = SystemClock.elapsedRealtime() - lastProgressAt
                 // Soft stall: warn with ALL available signals before taking
                 // any action (avoids false positives from short fluctuations).
                 if (idleMs > 10_000 && !softStallWarned) {
@@ -1104,6 +1116,18 @@ class StreamService : Service() {
                     return
                 }
             }
+        }
+    }
+
+    /** Persists the fact that this device could not sustain the selected
+     * profile in real time, so the dashboard can offer the tested low-load
+     * profile on the next open. Never touches the running engine. */
+    private fun markPerfLimited(reason: String) {
+        runCatching {
+            getSharedPreferences("vl_perf", MODE_PRIVATE).edit()
+                .putBoolean("limited", true)
+                .putString("reason", reason)
+                .apply()
         }
     }
 
@@ -1265,6 +1289,17 @@ class StreamService : Service() {
         isStreaming = false
         tickerJob?.cancel()
         stopThermalMonitor()
+        // Single end-of-session evidence line for post-mortem analysis:
+        // what phase we ended in, the verified encoder, reconnect usage and
+        // the last measured drift. Timestamped by LogStore.
+        LogStore.event(
+            "SESSION END SUMMARY: phase=${state.phase} | " +
+                "duration=${formatElapsed(System.currentTimeMillis() - startedAt)} | " +
+                "encoder=${encoderInUse.ifEmpty { "unknown" }} | " +
+                "reconnects used=$lastAttemptCount (budget $MAX_ATTEMPTS) | " +
+                "last drift=${String.format(java.util.Locale.US, "%.0f", lastDriftSec)}s | " +
+                "error=${state.errorText ?: "none"}"
+        )
         // Honest last-session status back to the stream project (if any).
         projectId?.let { pid ->
             val stamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)

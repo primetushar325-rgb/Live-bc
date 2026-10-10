@@ -143,6 +143,7 @@
     <string name="youtube_confirmation_hint">This app cannot see YouTube\'s broadcast state. While the encoder is sending video, open the YouTube Live Control Room (YouTube Studio → Go Live) — a preview of your stream should appear there. If your stream does not auto-start, press GO LIVE there. Only then is the broadcast public.</string>
 
     <!-- Stream projects -->
+    <string name="apply_recommended_profile">APPLY 480p @ 24 FPS (RECOMMENDED)</string>
     <string name="projects_title">Stream Projects</string>
     <string name="projects_subtitle">Every stream keeps its own video, destination and settings</string>
     <string name="projects_live_banner">● A stream is LIVE right now — tap to open the dashboard</string>

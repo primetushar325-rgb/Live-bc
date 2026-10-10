@@ -248,6 +248,7 @@ class MainActivity : AppCompatActivity() {
         checkBatteryOptimization()
         liveBanner.visibility = if (StreamService.isStreaming) View.VISIBLE else View.GONE
         renderStopButtonState()
+        renderPerfAdvisory()
         refreshPlaylistSummary()
         askNotificationPermissionIfNeeded()
         if (VideoRepository.current == null) {
@@ -478,6 +479,34 @@ class MainActivity : AppCompatActivity() {
         spinnerBitrate.setSelection(if (manual) 1 else 0)
         etBitrate.visibility = if (manual) View.VISIBLE else View.GONE
         bitrateSelectionRestored = true
+    }
+
+    /** Shows the performance advisory when the previous session could not
+     * sustain real-time encoding, and offers the tested low-load profile. */
+    private fun renderPerfAdvisory() {
+        val card = findViewById<LinearLayout>(R.id.perfAdvisoryCard)
+        val prefs = getSharedPreferences("vl_perf", MODE_PRIVATE)
+        if (!prefs.getBoolean("limited", false)) {
+            card.visibility = View.GONE
+            return
+        }
+        val reason = prefs.getString("reason", "").orEmpty()
+        findViewById<TextView>(R.id.txtPerfAdvisory).text =
+            "The previous stream could not keep up with real time" +
+                (if (reason.isNotEmpty()) " ($reason)" else "") +
+                ". YouTube ends broadcasts that fall behind. Use the tested " +
+                "low-load profile for stable long streams on this device."
+        findViewById<TextView>(R.id.btnApplyPerfProfile).setOnClickListener {
+            selectQuality(Quality.Q480)
+            selectFps(24)
+            settingsRepo.bitrateMode = BitrateMode.AUTO
+            spinnerBitrate.setSelection(0)
+            etBitrate.visibility = View.GONE
+            prefs.edit().remove("limited").remove("reason").apply()
+            renderPerfAdvisory()
+            toast("Recommended profile applied: 480p @ 24 FPS, auto bitrate")
+        }
+        card.visibility = View.VISIBLE
     }
 
     /** The main dashboard button doubles as STOP LIVE while a session is
